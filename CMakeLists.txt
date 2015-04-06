@@ -9,9 +9,9 @@ add_executable(Planner main.cpp)
 find_package(PkgConfig REQUIRED)
 pkg_search_module(FCL REQUIRED fcl)
 
-set(Boost_USE_STATIC_LIBS OFF) 
-set(Boost_USE_MULTITHREADED ON)  
-set(Boost_USE_STATIC_RUNTIME OFF) 
+set(Boost_USE_STATIC_LIBS OFF)
+set(Boost_USE_MULTITHREADED ON)
+set(Boost_USE_STATIC_RUNTIME OFF)
 find_package(Boost 1.57.0 COMPONENTS thread system REQUIRED)
 
 find_package(ASSIMP REQUIRED)
