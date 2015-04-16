@@ -108,12 +108,15 @@ public:
 		double fraction = dt / dist;
 		if(fraction > 1) fraction = 1;
 
-
 		State state(startX + dx * fraction,
 					startY + dy * fraction,
 					startZ + dz * fraction);
 
 		return Edge(start, state, dt);
+	}
+
+	Edge steer(const State &start, const State &goal) const {
+		return steer(start, goal, std::numeric_limits<double>::infinity());
 	}
 
 	Edge randomSteer(const State &start, double dt) const {
