@@ -65,7 +65,7 @@ public:
 			nn.insertPoint(e);
 
 #ifdef WITHGRAPHICS
-			// treeEdges.push_back(e);
+			 treeEdges.push_back(e);
 #endif
 
 			if(iterationsAtATime > 0 && ++iterations > iterationsAtATime) break;

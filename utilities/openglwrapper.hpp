@@ -65,7 +65,7 @@ public:
 		glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
 
 		GLFWwindow *window = glfwCreateWindow(800, 800, "Planner", nullptr, nullptr); // Windowed
-		//	GLFWwindow* window = glfwCreateWindow(800, 600, "OpenGL", glfwGetPrimaryMonitor(), nullptr); // Fullscreen
+//			GLFWwindow* window = glfwCreateWindow(800, 600, "OpenGL", glfwGetPrimaryMonitor(), nullptr); // Fullscreen
 
 		glfwMakeContextCurrent(window);
 
