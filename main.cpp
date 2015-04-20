@@ -7,6 +7,7 @@
 #include "agents/omnidirectional.hpp"
 
 #include "planners/rrt.hpp"
+#include "planners/prm.hpp"
 
 #include "samplers/uniformsampler.hpp"
 #include "samplers/normalsampler.hpp"
@@ -25,8 +26,10 @@ typedef UniformSampler<Workspace, Agent> Sampler;
 
 typedef flann::KDTreeSingleIndexParams KDTreeType;
 typedef FLANN_KDTreeWrapper<KDTreeType, flann::L2<double>, Agent::Edge> KDTree;
-
 typedef RRT<Workspace, Agent, Sampler, KDTree> Planner;
+
+typedef FLANN_KDTreeWrapper<KDTreeType, flann::L2<double>, Agent::State> KDTreeState;
+typedef PRM<Workspace, Agent, Sampler, KDTreeState> PrmPlanner;
 
 std::vector<double> parseDoubles(const std::string &str) {
 	std::vector<double> values;
@@ -65,12 +68,15 @@ int main(int argc, char *argv[]) {
 
 	Planner planner(workspace, agent, sampler, kdtree, args);
 
+	KDTreeState kdtreePrm(kdtreeType, 3);
+	PrmPlanner prmPlanner(workspace, agent, sampler, kdtreePrm, args);
+
 	#ifdef WITHGRAPHICS
 		bool firstInvocation = true;
 		bool foundGoal = false;
 		auto lambda = [&](){
 			if(!foundGoal)
-				foundGoal = planner.query(start, goal, 100, firstInvocation);
+				foundGoal = prmPlanner.query(start, goal, 100, firstInvocation);
 			firstInvocation = false;
 		};
 		OpenGLWrapper::getOpenGLWrapper().runWithCallback(lambda);
