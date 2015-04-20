@@ -41,25 +41,25 @@
 */
 
 /** \brief Probabilistic RoadMap planner */
-template<class Workspace, class Agent, class Sampler, class NN>
+template<class Workspace, class fAgent, class Sampler, class NN>
 class PRM {
 public:
     typedef typename Agent::State AgentState;
     typedef typename Agent::Edge AgentEdge;
 
-    struct internalStateType {
+    struct InternalState {
         typedef boost::vertex_property_tag kind;
     };
 
-    struct internalEdgeType {
+    struct InternalEdge {
+        typedef boost::edge_property_tag kind;
+    };
+
+    struct VertexTotalConnectionAttempts {
         typedef boost::vertex_property_tag kind;
     };
 
-    struct vertex_total_connection_attempts_t {
-        typedef boost::vertex_property_tag kind;
-    };
-
-    struct vertex_successful_connection_attempts_t {
+    struct VertexSuccessfulConnectionAttempts {
         typedef boost::vertex_property_tag kind;
     };
 
@@ -79,23 +79,47 @@ public:
      @par Edges should be undirected and have a weight property.
      */
     typedef boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS,
-                                  boost::property<internalStateType, AgentState *,
-                                                  boost::property<vertex_total_connection_attempts_t, unsigned long int,
-                                                                  boost::property<
-                                                                          vertex_successful_connection_attempts_t,
-                                                                          unsigned long int,
-                                                                          boost::property<boost::vertex_predecessor_t,
-                                                                                          unsigned long int,
-                                                                                          boost::property<
-                                                                                                  boost::vertex_rank_t,
+                                  boost::property<InternalState, AgentState *,
+                                                  boost::property<VertexTotalConnectionAttempts, unsigned long int,
+                                                                  boost::property<VertexSuccessfulConnectionAttempts,
+                                                                                  unsigned long int, boost::property<
+                                                                                  boost::vertex_predecessor_t,
+                                                                                  unsigned long int,
+                                                                                  boost::property<boost::vertex_rank_t,
                                                                                                   unsigned long int> > > > >,
-                                  boost::property<internalEdgeType, AgentEdge *> > Graph;
+                                  boost::property<InternalEdge, AgentEdge *> > Graph;
 
     /** @brief The type for a vertex in the roadmap. */
     typedef typename boost::graph_traits<Graph>::vertex_descriptor Vertex;
 
     /** @brief The type for an edge in the roadmap. */
     typedef typename boost::graph_traits<Graph>::edge_descriptor Edge;
+
+    class VertexWrapper {
+    public:
+        VertexWrapper(Vertex &vertex) : vertex(vertex) {
+        }
+
+        /* needed for being inserted into NN datastructure */
+        const typename Agent::StateVars &getStateVars() const {
+            return boost::get(InternalState(), vertex).getStateVars();
+        }
+
+        int getPointIndex() const {
+            return boost::get(InternalState(), vertex).getPointIndex();
+        }
+
+        void setPointIndex(int value) {
+            boost::get(InternalState(), vertex).setPointIndex(value);
+        }
+
+        Vertex &getVertex() {
+            return vertex;
+        }
+
+    private:
+        Vertex &vertex;
+    };
 
     /** @brief A nearest neighbors data structure for roadmap vertices. */
     typedef boost::shared_ptr<NearestNeighbors<Vertex>> RoadmapNeighbors;
@@ -116,16 +140,20 @@ public:
               agent(agent),
               sampler(sampler),
               nn(nn),
-              internalStateProperty(boost::get(internalStateType(), g_)),
-              internalEdgeProperty(boost::get(internalEdgeType(), g_)),
-              totalConnectionAttemptsProperty_(boost::get(vertex_total_connection_attempts_t(), g_)),
-              successfulConnectionAttemptsProperty(boost::get(vertex_successful_connection_attempts_t(), g_)),
-              disjointSets_(boost::get(boost::vertex_rank, g_), boost::get(boost::vertex_predecessor, g_)),
+              stateProperty(boost::get(InternalState(), graph)),
+              totalConnectionAttemptsProperty(boost::get(VertexTotalConnectionAttempts(), graph)),
+              successfulConnectionAttemptsProperty(boost::get(VertexSuccessfulConnectionAttempts(), graph)),
+              disjointSets(boost::get(boost::vertex_rank, graph), boost::get(boost::vertex_predecessor, graph)),
+              internalEdgeProperty(boost::get(InternalEdge(), graph)),
               addedNewSolution_(false),
               iterations_(0) {
 
         steeringDT = stod(args.value("Steering Delta t"));
         collisionCheckDT = stod(args.value("Collision Check Delta t"));
+    }
+
+    ~PRM() {
+        graph.clear();
     }
 
     bool query(const AgentState &start, const AgentState &goal, int iterationsAtATime = -1, bool firstInvocation = true) {
@@ -141,9 +169,9 @@ public:
                 return true;
             }
 
-            auto root = pool.construct(start, start, 0);
-
-            nn.insertPoint(root);
+//            auto root = pool.construct(start, start, 0);
+//
+//            nn.insertPoint(root);
         }
 
         unsigned int iterations = 0;
@@ -169,17 +197,17 @@ public:
     }
 
     const Graph &getRoadmap() const {
-        return g_;
+        return graph;
     }
 
     /** \brief Return the number of milestones currently in the graph */
     unsigned long int milestoneCount() const {
-        return boost::num_vertices(g_);
+        return boost::num_vertices(graph);
     }
 
     /** \brief Return the number of edges currently in the graph */
     unsigned long int edgeCount() const {
-        return boost::num_edges(g_);
+        return boost::num_edges(graph);
     }
 
 protected:
@@ -188,15 +216,6 @@ protected:
 //    double distanceFunction(const Vertex a, const Vertex b) const {
 //        return si_->distance(stateProperty_[a], stateProperty_[b]);
 //    }
-
-    ~PRM() {
-        freeMemory();
-    }
-
-    /** \brief Free all the memory allocated by the planner */
-    void freeMemory() {
-        g_.clear();
-    }
 
     /** \brief Attempt to connect disjoint components in the
     roadmap using random bounding motions (the PRM
@@ -209,8 +228,8 @@ protected:
 
 
         PDF <Vertex> pdf;
-                foreach(Vertex v, boost::vertices(g_)) {
-                        const unsigned long int t = totalConnectionAttemptsProperty_[v];
+                foreach(Vertex v, boost::vertices(graph)) {
+                        const unsigned long int t = totalConnectionAttemptsProperty[v];
                         pdf.add(v, (double) (t - successfulConnectionAttemptsProperty[v]) / (double) t);
                     }
 
@@ -219,7 +238,7 @@ protected:
 
         while (ptc == false) {
             iterations_++;
-            Vertex pdfVertex = pdf.sample(rng_.uniform01());
+            Vertex pdfVertex = pdf.sample(rngraph.uniform01());
             unsigned int s = si_
                     ->randomBounceMotion(simpleSampler_, stateProperty_[pdfVertex], workStates.size(), workStates,
                                          false);
@@ -230,16 +249,16 @@ protected:
                 graphMutex_.lock();
                 for (unsigned int i = 0; i < s; ++i) {
                     // add the vertex along the bouncing motion
-                    Vertex m = boost::add_vertex(g_);
+                    Vertex m = boost::add_vertex(graph);
                     stateProperty_[m] = si_->cloneState(workStates[i]);
-                    totalConnectionAttemptsProperty_[m] = 1;
+                    totalConnectionAttemptsProperty[m] = 1;
                     successfulConnectionAttemptsProperty[m] = 0;
-                    disjointSets_.make_set(m);
+                    disjointSets.make_set(m);
 
                     // add the edge to the parent vertex
                     const base::Cost weight = opt_->motionCost(stateProperty_[pdfVertex], stateProperty_[m]);
                     const Graph::edge_property_type properties(weight);
-                    boost::add_edge(pdfVertex, m, properties, g_);
+                    boost::add_edge(pdfVertex, m, properties, graph);
                     uniteComponents(pdfVertex, m);
 
                     // add the vertex to the nearest neighbors data structure
@@ -253,7 +272,7 @@ protected:
                     // add the edge to the parent vertex
                     const base::Cost weight = opt_->motionCost(stateProperty_[pdfVertex], stateProperty_[last]);
                     const Graph::edge_property_type properties(weight);
-                    boost::add_edge(pdfVertex, last, properties, g_);
+                    boost::add_edge(pdfVertex, last, properties, graph);
                     uniteComponents(pdfVertex, last);
                 }
                 graphMutex_.unlock();
@@ -307,7 +326,7 @@ protected:
 //                                start, starts) {
 //                                foreach(Vertex
 //                                                goal, goals) {
-//                                        // we lock because the connected components algorithm is incremental and may change disjointSets_
+//                                        // we lock because the connected components algorithm is incremental and may change disjointSets
 //                                        graphMutex_.lock();
 //                                        bool same_component = sameComponent(start, goal);
 //                                        graphMutex_.unlock();
@@ -387,7 +406,7 @@ protected:
 //            }
 //        }
 //
-//        unsigned long int nrStartStates = boost::num_vertices(g_);
+//        unsigned long int nrStartStates = boost::num_vertices(graph);
 //        OMPL_INFORM("%s: Starting planning with %lu states already in datastructure", getName().c_str(), nrStartStates);
 //
 //        // Reset addedNewSolution_ member and create solution checking thread
@@ -436,27 +455,32 @@ protected:
 
     /** \brief Construct a milestone for a given state (\e state), store it in the nearest neighbors data structure
     and then connect it to the roadmap in accordance to the connection strategy. */
-    Vertex addMilestone(const AgentState *sourceState) {
+    Vertex addMilestone(const AgentState &sourceState) {
 //        boost::mutex::scoped_lock _(graphMutex_);
 
         // Create a new vertex in the graph
-        const Vertex sourceVertex = boost::add_vertex(g_);
+        const Vertex sourceVertex = boost::add_vertex(graph);
 
         // Set the internal state to the target state
-        internalStateProperty[sourceVertex] = sourceState;
-        totalConnectionAttemptsProperty_[sourceVertex] = 1;
+        stateProperty[sourceVertex] = sourceState;
+        totalConnectionAttemptsProperty[sourceVertex] = 1;
         successfulConnectionAttemptsProperty[sourceVertex] = 0;
 
         // Initialize to its own (dis)connected component.
-        disjointSets_.make_set(sourceVertex);
+        disjointSets.make_set(sourceVertex);
+
+        nn.insertPoint(vertexWrapperPool.construct(sourceVertex));
 
         // Which milestones will we attempt to connect to?
-        const std::vector<Vertex> &neighbors = nn.kNearest(sourceVertex, 10); // TODO
+        std::vector<VertexWrapper> &neighbors = nn.kNearest(sourceVertex, 10); // TODO
                 foreach(Vertex neighbor, neighbors) {
-                        totalConnectionAttemptsProperty_[sourceVertex]++;
-                        totalConnectionAttemptsProperty_[neighbor]++;
 
-                        const auto edge = agent.steer(sourceState, internalStateProperty[neighbor], steeringDT);
+                        auto targetVertex = neighbor.getVertex();
+
+                        totalConnectionAttemptsProperty[sourceVertex]++;
+                        totalConnectionAttemptsProperty[targetVertex]++;
+
+                        auto edge = agent.steer(sourceState, stateProperty[targetVertex], steeringDT);
 
                         // Validate edge
                         if (workspace.safeEdge(agent, edge, collisionCheckDT)) {
@@ -465,10 +489,10 @@ protected:
                             successfulConnectionAttemptsProperty[sourceVertex]++;
                             successfulConnectionAttemptsProperty[neighbor]++;
 
-                            const internalEdgeType targetEdge = pool.construct(edge.start, edge.end, edge.cost);
-                            const typename Graph::edge_property_type properties(targetEdge);
+                            InternalEdge targetEdge = pool.construct(edge.start, edge.end, edge.cost);
+                            typename Graph::edge_property_type properties(targetEdge);
 
-                            boost::add_edge(neighbor, sourceVertex, properties, g_);
+                            boost::add_edge(neighbor, sourceVertex, properties, graph);
                             uniteComponents(neighbor, sourceVertex);
                         }
                     }
@@ -480,22 +504,22 @@ protected:
 
     /** \brief Make two milestones (\e m1 and \e m2) be part of the same connected component. The component with fewer elements will get the id of the component with more elements. */
     inline void uniteComponents(Vertex m1, Vertex m2) {
-        disjointSets_.union_set(m1, m2);
+        disjointSets.union_set(m1, m2);
     }
 
     /** \brief Check if two milestones (\e m1 and \e m2) are part of the same connected component. This is not a const function since we use incremental connected components from boost */
     inline bool sameComponent(Vertex m1, Vertex m2) {
-        return boost::same_component(m1, m2, disjointSets_);
+        return boost::same_component(m1, m2, disjointSets);
     }
 
 //    /** \brief Given two milestones from the same connected component, construct a path connecting them and set it as the solution */
 //    ompl::base::PathPtr constructSolution(const Vertex &start, const Vertex &goal) {
 //        boost::mutex::scoped_lock _(graphMutex_);
-//        boost::vector_property_map<Vertex> prev(boost::num_vertices(g_));
+//        boost::vector_property_map<Vertex> prev(boost::num_vertices(graph));
 //
 //        try {
 //            // Consider using a persistent distance_map if it's slow
-//            boost::astar_search(g_, start, boost::bind(&PRM::costHeuristic, this, _1, goal),
+//            boost::astar_search(graph, start, boost::bind(&PRM::costHeuristic, this, _1, goal),
 //                                boost::predecessor_map(prev).distance_compare(
 //                                                boost::bind(&base::OptimizationObjective::isCostBetterThan, opt_.get(),
 //                                                            _1, _2)).distance_combine(
@@ -538,32 +562,31 @@ protected:
     }
 
     /** \brief Connectivity graph */
-    Graph g_;
+    Graph graph;
 
     /** \brief Access to the internal Agent::State at each Vertex */
-    typename boost::property_map<Graph, internalStateType>::type internalStateProperty;
+    typename boost::property_map<Graph, InternalState>::type stateProperty;
 
     /** \brief Access to the number of total connection attempts for a vertex */
-    typename boost::property_map<Graph, vertex_total_connection_attempts_t>::type totalConnectionAttemptsProperty_;
+    typename boost::property_map<Graph, VertexTotalConnectionAttempts>::type totalConnectionAttemptsProperty;
 
     /** \brief Access to the number of successful connection attempts for a vertex */
-    typename boost::property_map<Graph,
-                                 vertex_successful_connection_attempts_t>::type successfulConnectionAttemptsProperty;
+    typename boost::property_map<Graph, VertexSuccessfulConnectionAttempts>::type successfulConnectionAttemptsProperty;
 
     /** \brief Access to the internal Agent::Edge at each Edge */
-    typename boost::property_map<Graph, internalEdgeType>::type internalEdgeProperty;
+    typename boost::property_map<Graph, InternalEdge>::type internalEdgeProperty;
 
     /** \brief Data structure that maintains the connected components */
     typename boost::disjoint_sets<typename boost::property_map<Graph, boost::vertex_rank_t>::type,
-                                  typename boost::property_map<Graph, boost::vertex_predecessor_t>::type> disjointSets_;
+                                  typename boost::property_map<Graph, boost::vertex_predecessor_t>::type> disjointSets;
 
     /** \brief Random number generator */
-//    RNG rng_;
+//    RNG rngraph;
 
     /** \brief A flag indicating that a solution has been added during solve() */
     bool addedNewSolution_;
 
-    /** \brief Mutex to guard access to the Graph member (g_) */
+    /** \brief Mutex to guard access to the Graph member (graph) */
     mutable boost::mutex graphMutex_;
 
     //////////////////////////////
@@ -576,11 +599,13 @@ protected:
 
     // Motion Planning Toolkit //
 
-    Workspace &workspace;
+    const Workspace &workspace;
     const Agent &agent;
     const Sampler &sampler;
     NN &nn;
     boost::object_pool<Edge> pool;
+    boost::object_pool<VertexWrapper> vertexWrapperPool;
+
     std::vector<const Edge *> treeEdges;
 
     double steeringDT, collisionCheckDT;

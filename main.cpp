@@ -28,7 +28,7 @@ typedef flann::KDTreeSingleIndexParams KDTreeType;
 typedef FLANN_KDTreeWrapper<KDTreeType, flann::L2<double>, Agent::Edge> KDTree;
 typedef RRT<Workspace, Agent, Sampler, KDTree> Planner;
 
-typedef FLANN_KDTreeWrapper<KDTreeType, flann::L2<double>, Agent::State> KDTreeState;
+typedef FLANN_KDTreeWrapper<KDTreeType, flann::L2<double>, PRM::VertexWrapper> KDTreeState;
 typedef PRM<Workspace, Agent, Sampler, KDTreeState> PrmPlanner;
 
 std::vector<double> parseDoubles(const std::string &str) {
