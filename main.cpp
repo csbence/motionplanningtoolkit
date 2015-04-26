@@ -5,6 +5,7 @@
 #include "workspaces/map3d.hpp"
 
 #include "agents/omnidirectional.hpp"
+#include "agents/dubins.hpp"
 
 #include "planners/rrt.hpp"
 #include "planners/prm.hpp"
@@ -18,11 +19,14 @@
 #include "utilities/flannkdtreewrapper.hpp"
 #include "utilities/instancefilemap.hpp"
 
+#include "bullet_interface/bullet_raycast_vehicle.hpp"
+
 typedef Omnidirectional Agent;
-typedef Map3D<Omnidirectional> Workspace;
-typedef GridDiscretization<Workspace> Discretization;
-typedef UniformSampler<Workspace, Agent> Sampler;
-// typedef FBiasedSampler<Workspace, Agent, Discretization> Sampler;
+//typedef Dubins Agent;
+typedef Map3D<Agent> Workspace;
+typedef GridDiscretization<Workspace, Agent> Discretization;
+//typedef UniformSampler<Workspace, Agent> Sampler;
+typedef FBiasedSampler<Workspace, Agent, Discretization> Sampler;
 
 typedef flann::KDTreeSingleIndexParams KDTreeType;
 typedef FLANN_KDTreeWrapper<KDTreeType, flann::L2<double>, Agent::Edge> KDTree;
@@ -55,12 +59,12 @@ int main(int argc, char *argv[]) {
 	auto goalVars = parseDoubles(args.value("Agent Goal Location"));
 	Agent::State goal(goalVars);
 
-	// std::vector<double> discretizations(3, 2./3.);
-	// Discretization discretization(workspace, discretizations);
+	std::vector<double> discretizations(3, 0.1);
+	Discretization discretization(workspace, agent, discretizations);
 
-	// Sampler sampler(workspace, agent, discretization, start, goal);
+	Sampler sampler(workspace, agent, discretization, start, goal, 4);
 
-	Sampler sampler(workspace, agent);	
+	//Sampler sampler(workspace, agent);
 
 //	KDTreeType kdtreeType;
 //	KDTree kdtree(kdtreeType, 3);
@@ -71,11 +75,11 @@ int main(int argc, char *argv[]) {
 
 	#ifdef WITHGRAPHICS
 		bool firstInvocation = true;
-		bool foundGoal = false;
 		auto lambda = [&](){
-			if(!foundGoal)
-				foundGoal = prmPlanner.query(start, goal, 100, firstInvocation);
+			planner.query(start, goal, 100, firstInvocation);
 			firstInvocation = false;
+			agent.draw();
+			workspace.draw();
 		};
 		OpenGLWrapper::getOpenGLWrapper().runWithCallback(lambda);
 	#else

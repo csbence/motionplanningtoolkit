@@ -30,29 +30,41 @@ public:
 
 		State(const StateVars &vars) : stateVars(vars.begin(), vars.begin()+3) {}
 
+		const bool equals(const State &s) const {
+			return fabs(stateVars[0] - s.stateVars[0]) <= 0.000001 &&
+					fabs(stateVars[1] - s.stateVars[1]) <= 0.000001 &&
+					fabs(stateVars[2] - s.stateVars[2]) <= 0.000001;
+		}
+
 		double x() const { return stateVars[0]; }
 		double y() const { return stateVars[1]; }
 		double z() const { return stateVars[2]; }
 		const StateVars& getStateVars() const { return stateVars; }
 
-		int getPointIndex() const { return treeIndex; }
-		void setPointIndex(int ptInd) { treeIndex = ptInd; }
-
 #ifdef WITHGRAPHICS
-		void draw() const {
+		void draw(const OpenGLWrapper::Color &color = OpenGLWrapper::Color()) const {
+			const auto &identity = OpenGLWrapper::getOpenGLWrapper().getIdentity();
+
 			std::vector<double> pt(stateVars.begin(), stateVars.end());
 			pt.push_back(1);
+			pt.push_back(0);
+			pt.push_back(0);
+			pt.push_back(1);
+			pt.push_back(1);
+			pt.insert(pt.end(), color.getColor().begin(), color.getColor().end());
+			pt.insert(pt.end(), identity.begin(), identity.end());
+
 			OpenGLWrapper::getOpenGLWrapper().drawPoints(pt);
 		}
 #endif
 
 	private:
 		StateVars stateVars;
-		int treeIndex;
 	};
 
 	class Edge {
 	public:
+		Edge(const State &start) : start(start), end(start), cost(0), treeIndex(0) {}
 		Edge(const State &start, const State &end, double cost) : start(start), end(end), cost(cost), treeIndex(0) {}
 		Edge(const Edge& e) : start(e.start), end(e.end), cost(e.cost), treeIndex(e.treeIndex) {}
 
@@ -62,11 +74,26 @@ public:
 		void setPointIndex(int ptInd) { treeIndex = ptInd; }
 
 #ifdef WITHGRAPHICS
-		void draw() const {
+		void draw(const OpenGLWrapper::Color &color = OpenGLWrapper::Color()) const {
+			const auto &identity = OpenGLWrapper::getOpenGLWrapper().getIdentity();
 			std::vector<double> line(start.getStateVars().begin(), start.getStateVars().end());
 			line.push_back(1);
+			line.push_back(0);
+			line.push_back(0);
+			line.push_back(1);
+			line.push_back(1);
+			line.insert(line.end(), color.getColor().begin(), color.getColor().end());
+			line.insert(line.end(), identity.begin(), identity.end());
+
 			line.insert(line.end(), end.getStateVars().begin(), end.getStateVars().end());
 			line.push_back(1);
+			line.push_back(0);
+			line.push_back(0);
+			line.push_back(1);
+			line.push_back(1);
+			line.insert(line.end(), color.getColor().begin(), color.getColor().end());
+			line.insert(line.end(), identity.begin(), identity.end());
+
 			OpenGLWrapper::getOpenGLWrapper().drawLines(line);
 		}
 #endif
@@ -79,6 +106,11 @@ public:
 	Omnidirectional(const InstanceFileMap &args) :
 		mesh(args.value("Agent Mesh")) {
 
+			boost::char_separator<char> sep(" ");
+			boost::tokenizer< boost::char_separator<char> > tokens(args.value("Goal Thresholds"), sep);
+			for(auto token : tokens) {
+				goalThresholds.push_back(std::stod(token));
+			}
 		}
 
 	StateVarRanges getStateVarRanges(const WorkspaceBounds& bounds) const {
@@ -90,9 +122,9 @@ public:
 	}
 
 	bool isGoal(const State &state, const State &goal) const {
-		return fabs(state.x() - goal.x()) < 0.01 &&
-		fabs(state.y() - goal.y()) < 0.01 &&
-		fabs(state.z() - goal.z()) < 0.01;
+		return fabs(state.x() - goal.x()) < goalThresholds[0] &&
+		fabs(state.y() - goal.y()) < goalThresholds[1] &&
+		fabs(state.z() - goal.z()) < goalThresholds[2];
 	}
 
 	Edge steer(const State &start, const State &goal, double dt) const {
@@ -141,6 +173,15 @@ public:
 		return mesh;
 	}
 
+	std::vector<fcl::Transform3f> getRepresentivePosesForLocation(const std::vector<double> &loc) const {
+		std::vector<fcl::Transform3f> poses;
+
+		fcl::Vec3f pose(loc[0], loc[1], loc[2]);
+		poses.push_back(fcl::Transform3f(pose));
+
+		return poses;
+	}
+
 	std::vector<fcl::Transform3f> getPoses(const Edge &edge, double dt) const {
 		std::vector<fcl::Transform3f> poses;
 		
@@ -184,6 +225,42 @@ public:
 		return poses;
 	}
 
+#ifdef WITHGRAPHICS
+	void draw() const {
+		mesh.draw();
+	}
+
+	void drawSolution(const std::vector<const Edge*> &solution, double dt = std::numeric_limits<double>::infinity()) const {
+		for(const Edge *edge : solution) {
+			std::vector<fcl::Transform3f> poses = getPoses(*edge, dt);
+			auto transform = OpenGLWrapper::getOpenGLWrapper().getIdentity();
+			for(auto pose : poses) {
+				const Vec3f &translation = pose.getTranslation();
+				transform[12] = translation[0];
+				transform[13] = translation[1];
+				transform[14] = translation[2];
+
+				mesh.draw(OpenGLWrapper::Color(), transform);
+			}
+		}
+	}
+
+	void animateSolution(const std::vector<const Edge*> &solution, unsigned int poseNumber) const {
+		auto transform = OpenGLWrapper::getOpenGLWrapper().getIdentity();
+		unsigned int edgeNumber = poseNumber / 2;
+		unsigned int endpoint = poseNumber % 2;
+		const Edge *edge = solution[edgeNumber];
+		std::vector<fcl::Transform3f> poses = getPoses(*edge, std::numeric_limits<double>::infinity());
+		const Vec3f &translation = poses[endpoint].getTranslation();
+		transform[12] = translation[0];
+		transform[13] = translation[1];
+		transform[14] = translation[2];
+
+		mesh.draw(OpenGLWrapper::Color(), transform);
+	}
+#endif
+
 private:
 	SimpleAgentMeshHandler mesh;
+	std::vector<double> goalThresholds;
 };
