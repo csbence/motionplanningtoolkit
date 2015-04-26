@@ -1,10 +1,20 @@
 cmake_minimum_required (VERSION 2.6)
 project (MotionPlanning)
 
+set ( CMAKE_MODULE_PATH
+  ${PROJECT_SOURCE_DIR}/CMakeModules
+)
+
 set(CMAKE_CXX_FLAGS "-std=c++11 ${CMAKE_CXX_FLAGS}")
 set(BUILDGRAPHICS 1)
 
 add_executable(Planner main.cpp)
+
+if(IS_DIRECTORY "/Library/Frameworks/3DconnexionClient.framework")
+	add_definitions(-DWITHCONNEXION)
+	set(CONNEXION_LIBRARIES "/Library/Frameworks/3DconnexionClient.framework")
+endif(IS_DIRECTORY "/Library/Frameworks/3DconnexionClient.framework")
+
 
 find_package(PkgConfig REQUIRED)
 pkg_search_module(FCL REQUIRED fcl)
@@ -15,18 +25,23 @@ set(Boost_USE_STATIC_RUNTIME OFF)
 find_package(Boost 1.57.0 COMPONENTS thread system REQUIRED)
 
 find_package(ASSIMP REQUIRED)
+find_package(BULLET REQUIRED)
 
 include_directories(
 	${Boost_INCLUDE_DIRS}
 	${Boost_LIBRARY_DIRS}
 	${FCL_LIBRARY_DIRS}
 	${ASSIMP_LIBRARY_DIRS}
+	${BULLET_LIBRARY_DIRS}
+	"/usr/local/include/bullet"
 )
 
 target_link_libraries(Planner
 	${Boost_LIBRARIES}
 	${FCL_LIBRARIES}
 	${ASSIMP_LIBRARIES}
+	${BULLET_LIBRARIES}
+	${CONNEXION_LIBRARIES}
 )
 
 if(BUILDGRAPHICS)

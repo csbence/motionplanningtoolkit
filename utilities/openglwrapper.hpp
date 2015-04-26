@@ -12,9 +12,13 @@
 #include <cmath>
 #include <vector>
 #include <functional>
+#include <fstream>
+#include <string>
 
 #include <boost/date_time/posix_time/posix_time.hpp>
-#include <boost/thread/thread.hpp> 
+#include <boost/thread/thread.hpp>
+
+#include "connexion_3d_mouse.hpp"
 
 class OpenGLWrapper {
 
@@ -31,21 +35,26 @@ class OpenGLWrapper {
 
 
 	// Shader sources
-	const GLchar *vertexSource =
-	    "#version 150\n"
-	    "in vec4 position;"
-		"uniform mat4 transformMatrix;"
-	    "void main() {"
-	    "	gl_Position = transformMatrix * position;"
-	    "}";
-	const GLchar *fragmentSource =
-	    "#version 150 core\n"
-	    "out vec4 outColor;"
-	    "void main() {"
-	    "	outColor = vec4(1.0, 1.0, 1.0, 1.0);"
-	    "}";
+	const GLchar *vertexSource = "../utilities/shaders/shader.vert";
+	const GLchar *fragmentSource = "../utilities/shaders/shader.frag";
 
 public:
+
+	class Color {
+	public:
+		Color(double r = 1, double g = 1, double b = 1, double a = 1) : color(4) {
+			color[0] = r;
+			color[1] = g;
+			color[2] = b;
+			color[3] = a;
+		}
+		const std::vector<double>& getColor() const { return color; }
+		static Color Red() { return Color(1,0,0); }
+		static Color Green() { return Color(0,1,0); }
+		static Color Blue() { return Color(0,0,1); }
+	private:
+		std::vector<double> color;
+	};
 
 	static OpenGLWrapper& getOpenGLWrapper() {
 		if(wrapperInstance == NULL) {
@@ -72,6 +81,10 @@ public:
 		glewExperimental = GL_TRUE;
 		glewInit();
 
+		glEnable(GL_CULL_FACE);
+		glDepthFunc(GL_LEQUAL);
+		glEnable(GL_DEPTH_TEST);
+
 		// Create Vertex Array Object
 		GLuint vao;
 		glGenVertexArrays(1, &vao);
@@ -79,12 +92,16 @@ public:
 
 		// Create and compile the vertex shader
 		GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-		glShaderSource(vertexShader, 1, &vertexSource, NULL);
+		std::string src = readShader(vertexSource);
+		const char *srcPtr = src.c_str();
+		glShaderSource(vertexShader, 1, &srcPtr, NULL);
 		glCompileShader(vertexShader);
 
 		// Create and compile the fragment shader
 		GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-		glShaderSource(fragmentShader, 1, &fragmentSource, NULL);
+		src = readShader(fragmentSource);
+		srcPtr = src.c_str();
+		glShaderSource(fragmentShader, 1, &srcPtr, NULL);
 		glCompileShader(fragmentShader);
 
 		// Link the vertex and fragment shader into a shader program
@@ -101,9 +118,31 @@ public:
 
 		GLint transformInt = glGetUniformLocation(shaderProgram, "transformMatrix");
 
+		Connexion3DMouse::createConnexion3DMouse();
+
 		while(!glfwWindowShouldClose(window)) {
 			glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-			glClear(GL_COLOR_BUFFER_BIT);
+			glClearDepthf(1.0f);
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+			// xRot += M_PI / ((double)rand() / (double)RAND_MAX * 10. + 170);
+			// yRot += M_PI / ((double)rand() / (double)RAND_MAX * 10. + 170);
+
+			// double sinDeltaX = sin(xRot);
+			// double cosDeltaX = cos(xRot);
+
+			// double sinDeltaY = sin(yRot);
+			// double cosDeltaY = cos(yRot);
+
+			// yRotateMatrix[5] = cosDeltaY;
+			// yRotateMatrix[6] = -sinDeltaY;
+			// yRotateMatrix[9] = sinDeltaY;
+			// yRotateMatrix[10] = cosDeltaY;
+
+			// xRotateMatrix[0] = cosDeltaX;
+			// xRotateMatrix[2] = sinDeltaX;
+			// xRotateMatrix[8] = -sinDeltaX;
+			// xRotateMatrix[10] = cosDeltaX;
 
 			buildTransform();
 			glUniformMatrix4fv(transformInt, 1, true, transformMatrix);
@@ -112,8 +151,10 @@ public:
 
 			glfwSwapBuffers(window);
 			glfwPollEvents();
+			handle3DMouseEvents();
 		}
 
+		Connexion3DMouse::destroyConnexion3DMouse();
 
 		glDeleteProgram(shaderProgram);
 		glDeleteShader(fragmentShader);
@@ -124,15 +165,36 @@ public:
 		glfwTerminate();
 	}
 
+	static void handle3DMouseEvents() {
+		Connexion3DMouse::MouseState state = Connexion3DMouse::getLatestState();
+		OpenGLWrapper& gl = getOpenGLWrapper();
+		gl.translate(0, 1, state.tx / 1000);
+		gl.translate(1, 1, state.ty / 1000);
+		gl.translate(2, 1, state.tz / 1000);
+		gl.rotate(0, 1, state.rx / 1000);
+		gl.rotate(1, 1, state.ry / 1000);
+		gl.rotate(2, 1, state.rz / 1000);
+	}
+
 	static void keyboard(GLFWwindow *window, int key, int scancode, int action, int mods) {
-		switch(key) {
-			case GLFW_KEY_ESCAPE:
-				glfwSetWindowShouldClose(window, GL_TRUE);
-				break;
-			case GLFW_KEY_LEFT_SHIFT:
-			case GLFW_KEY_RIGHT_SHIFT:
-				getOpenGLWrapper().setShiftModifier(action);
-				break;
+		if(action == 0) {
+			switch(key) {
+				case GLFW_KEY_ESCAPE:
+					glfwSetWindowShouldClose(window, GL_TRUE);
+					break;
+				case GLFW_KEY_LEFT_SHIFT:
+				case GLFW_KEY_RIGHT_SHIFT:
+					getOpenGLWrapper().setShiftModifier(action);
+					break;
+				case '-': getOpenGLWrapper().zoom(-1); break;
+				case '=': if(mods == GLFW_MOD_SHIFT) getOpenGLWrapper().zoom(1); break;
+				case 'A': mods == GLFW_MOD_SHIFT ? getOpenGLWrapper().translate(0, 1) : getOpenGLWrapper().translate(0, -1); break;
+				case 'S': mods == GLFW_MOD_SHIFT ? getOpenGLWrapper().translate(1, -1) : getOpenGLWrapper().translate(1, 1); break;
+				case 'D': mods == GLFW_MOD_SHIFT ? getOpenGLWrapper().translate(2, 1) : getOpenGLWrapper().translate(2, -1); break;
+				case 'Z': mods == GLFW_MOD_SHIFT ? getOpenGLWrapper().rotate(0, 1) : getOpenGLWrapper().rotate(0, -1); break;
+				case 'X': mods == GLFW_MOD_SHIFT ? getOpenGLWrapper().rotate(1, -1) : getOpenGLWrapper().rotate(1, 1); break;
+				case 'C': mods == GLFW_MOD_SHIFT ? getOpenGLWrapper().rotate(2, 1) : getOpenGLWrapper().rotate(2, -1); break;
+			}
 		}
 	}
 
@@ -144,6 +206,58 @@ public:
 		OpenGLWrapper &wrapper = getOpenGLWrapper();
 		if(wrapper.isMouseClicked()) {
 			wrapper.setMousePosition(x, y);
+		}
+	}
+
+	void translate(int axis, double direction, double magnitude = 1) {
+		double translateDistance = 0.1 * magnitude;
+		if(axis == 0) {
+			translateMatrix[3] += translateDistance * direction;
+		} else if(axis == 1) {
+			translateMatrix[7] -= translateDistance * direction;
+		} else if(axis == 2) {
+			translateMatrix[11] += translateDistance * direction;
+		}
+
+	}
+
+	void zoom(double direction, double magnitude = 1) {
+		double scaleFactor = (direction < 0 ? 0.9 : 1.1) * magnitude;
+		scaleMatrix[0] *= scaleFactor;
+		scaleMatrix[5] *= scaleFactor;
+		scaleMatrix[10] *= scaleFactor;
+	}
+
+	void rotate(int axis, double direction, double magnitude = 1) {
+		double rotation = 0.1745 * magnitude;
+
+		if(axis == 0) {
+			xRot += rotation * direction;
+			double sinVal = sin(xRot);
+			double cosVal = cos(xRot);
+
+			xRotateMatrix[0] = cosVal;
+			xRotateMatrix[2] = sinVal;
+			xRotateMatrix[8] = -sinVal;
+			xRotateMatrix[10] = cosVal;
+		} else if(axis == 1) {
+			yRot += rotation * direction;
+			double sinVal = sin(yRot);
+			double cosVal = cos(yRot);
+
+			yRotateMatrix[5] = cosVal;
+			yRotateMatrix[6] = -sinVal;
+			yRotateMatrix[9] = sinVal;
+			yRotateMatrix[10] = cosVal;
+		} else if(axis == 2) {
+			zRot += rotation * direction;
+			double sinVal = sin(zRot);
+			double cosVal = cos(zRot);
+
+			zRotateMatrix[0] = cosVal;
+			zRotateMatrix[1] = -sinVal;
+			zRotateMatrix[4] = sinVal;
+			zRotateMatrix[5] = cosVal;
 		}
 	}
 
@@ -194,8 +308,13 @@ public:
 				}
 				else {
 					if(mouseInfo.oldCoordIsGood) {
-						xRot += M_PI / 180 * (x - mouseInfo.oldX) ? 1 : -1 ;
-						yRot += M_PI / 180 * (y - mouseInfo.oldY) ? 1 : -1 ;
+						double dx = fabs(x - mouseInfo.oldX);
+						double dy = fabs(y - mouseInfo.oldY);
+
+						if(dx >= dy) 
+							xRot += M_PI / 180 * ((x - mouseInfo.oldX > 0) ? 1 : -1);
+						else
+							yRot += M_PI / 180 * ((y - mouseInfo.oldY > 0) ? 1 : -1);
 
 						double sinDeltaX = sin(xRot);
 						double cosDeltaX = cos(xRot);
@@ -227,35 +346,59 @@ public:
 	}
 
 	void drawPolygon(const std::vector<double> &verts) const {
-		auto lambda = [&](){ glDrawArrays(GL_LINE_LOOP, 0, verts.size() / 4); };
+		auto lambda = [&](){ glDrawArrays(GL_LINE_LOOP, 0, verts.size() / 28); };
 		drawCommon(lambda, verts);
 	}
 
 	void drawTriangles(const std::vector<double> &verts) const {
-		auto lambda = [&](){ glDrawArrays(GL_TRIANGLE_STRIP, 0, verts.size() / 4); };
+		auto lambda = [&](){ glDrawArrays(GL_TRIANGLE_STRIP, 0, verts.size() / 28); };
 		drawCommon(lambda, verts);
 	}
 
 	void drawPoints(const std::vector<double> &verts) const {
-		auto lambda = [&](){ glDrawArrays(GL_POINTS, 0, verts.size() / 4); };
+		auto lambda = [&](){ glDrawArrays(GL_POINTS, 0, verts.size() / 28); };
 		drawCommon(lambda, verts);
 	}
 
 	void drawLines(const std::vector<double> &verts) const {
-		auto lambda = [&](){ glDrawArrays(GL_LINE_STRIP, 0, verts.size() / 4); };
+		auto lambda = [&](){ glDrawArrays(GL_LINE_STRIP, 0, verts.size() / 28); };
 		drawCommon(lambda, verts);
 	}
 
+	const std::vector<double>& getIdentity() const { return Identity; }
+
 private:
-	OpenGLWrapper() : xRot(0), yRot(0) {
+	OpenGLWrapper() : xRot(0), yRot(0), zRot(0), Identity(16, 0) {
 		makeIdentity(transformMatrix);
 		makeIdentity(scaleMatrix);
 		makeIdentity(translateMatrix);
 		makeIdentity(xRotateMatrix);
 		makeIdentity(yRotateMatrix);
-		scaleMatrix[0] = 0.5;
-		scaleMatrix[5] = 0.5;
-		scaleMatrix[10] = 0.5;
+		makeIdentity(zRotateMatrix);
+		scaleMatrix[0] = .01;
+		scaleMatrix[5] = .01;
+		scaleMatrix[10] = .01;
+
+		Identity[0] = Identity[5] = Identity[10] = Identity[15] = 1;
+	}
+
+	std::string readShader(const char* filename) const {
+		std::fstream file;
+  		file.open(filename, std::fstream::in);
+
+		if(!file.is_open()) {
+			fprintf(stderr, "can't open shader file: %s\n", filename);
+			exit(1);
+		}
+
+		std::string shader;
+		std::string line;
+		while(!file.eof()) {
+			std::getline(file, line);
+			shader += line + "\n";
+		}
+		file.close();
+		return shader;
 	}
 
 	void drawCommon(std::function<void(void)> drawType, const std::vector<double> &verts) const {
@@ -272,7 +415,25 @@ private:
 		// Specify the layout of the vertex data
 		GLint posAttrib = glGetAttribLocation(shaderProgram, "position");
 		glEnableVertexAttribArray(posAttrib);
-		glVertexAttribPointer(posAttrib, 4, GL_FLOAT, GL_FALSE, 0, (void*)0);
+		glVertexAttribPointer(posAttrib, 4, GL_FLOAT, GL_FALSE, 28*sizeof(float), (void*)0);
+
+		GLint normAttrib = glGetAttribLocation(shaderProgram, "normal");
+		glEnableVertexAttribArray(normAttrib);
+		glVertexAttribPointer(normAttrib, 4, GL_FLOAT, GL_FALSE, 28*sizeof(float), (void*)(4*sizeof(float)));
+
+		GLint colAttrib = glGetAttribLocation(shaderProgram, "color");
+		glEnableVertexAttribArray(colAttrib);
+		glVertexAttribPointer(colAttrib, 4, GL_FLOAT, GL_FALSE, 28*sizeof(float), (void*)(8*sizeof(float)));
+
+		GLint transformAttrib = glGetAttribLocation(shaderProgram, "transform");
+		glEnableVertexAttribArray(transformAttrib + 0);
+		glEnableVertexAttribArray(transformAttrib + 1);
+		glEnableVertexAttribArray(transformAttrib + 2);
+		glEnableVertexAttribArray(transformAttrib + 3);
+		glVertexAttribPointer(transformAttrib + 0, 4, GL_FLOAT, GL_FALSE, 28*sizeof(float), (void*)(12*sizeof(float)));
+		glVertexAttribPointer(transformAttrib + 1, 4, GL_FLOAT, GL_FALSE, 28*sizeof(float), (void*)(16*sizeof(float)));
+		glVertexAttribPointer(transformAttrib + 2, 4, GL_FLOAT, GL_FALSE, 28*sizeof(float), (void*)(20*sizeof(float)));
+		glVertexAttribPointer(transformAttrib + 3, 4, GL_FLOAT, GL_FALSE, 28*sizeof(float), (void*)(24*sizeof(float)));
 
 		drawType();
 
@@ -284,6 +445,7 @@ private:
 
 		multiply(translateMatrix, xRotateMatrix, transformMatrix);
 		multiply(transformMatrix, yRotateMatrix, transformMatrix);
+		multiply(transformMatrix, zRotateMatrix, transformMatrix);
 		multiply(transformMatrix, scaleMatrix, transformMatrix);
 	}
 
@@ -321,7 +483,6 @@ private:
 			} else {
 				fprintf(stderr, "%g\t", m[i]);
 			}
-			
 		}
 		fprintf(stderr, "\n");
 	}
@@ -332,9 +493,11 @@ private:
 	GLfloat translateMatrix[16];
 	GLfloat xRotateMatrix[16];
 	GLfloat yRotateMatrix[16];
-	double xRot, yRot;
+	GLfloat zRotateMatrix[16];
+	double xRot, yRot, zRot;
 	GLfloat transformMatrix[16];
 	MouseInfo mouseInfo;
+	std::vector<double> Identity;
 
 	static OpenGLWrapper *wrapperInstance;
 };

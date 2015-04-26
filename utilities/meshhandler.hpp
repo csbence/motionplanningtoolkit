@@ -1,4 +1,11 @@
+#pragma once
+
 #include <fcl/BVH/BVH_model.h>
+
+#ifdef __APPLE__
+//Wow.
+#undef nil
+#endif
 #include <fcl/broadphase/broadphase.h>
 
 #include "fcl_helpers.hpp"
@@ -8,16 +15,25 @@ typedef fcl::BVHModel<fcl::OBBRSS> Model;
 
 class StaticEnvironmentMeshHandler {
 public:
-	StaticEnvironmentMeshHandler(const std::string &filename, const std::string &pose) {
+	StaticEnvironmentMeshHandler(const std::string &filename, const std::string &pose) : transform(16, 0) {
 		AssimpMeshLoader meshLoader(filename.c_str());
 
 		if(meshLoader.error) {
 			exit(0);
 		}
 
-		meshLoader.get(vertices, triangles);
+		meshLoader.get(vertices, triangles, normals);
 
 		fcl::Transform3f tf = fcl_helpers::parseTransform(pose);
+
+		for(unsigned int i = 0; i < 16; ++i) {
+			if((i%4) == (i/4)) transform[i] = 1;
+		}
+
+		const Vec3f &translation = tf.getTranslation();
+		transform[12] = translation[0];
+		transform[13] = translation[1];
+		transform[14] = translation[2];
 
 		for(unsigned int i = 0; i < vertices.size(); i++) {
 			const std::vector<fcl::Vec3f> &verts = vertices[i];
@@ -49,26 +65,33 @@ public:
 	}
 
 #ifdef WITHGRAPHICS
-	void draw() {
+	void draw(const OpenGLWrapper::Color &color = OpenGLWrapper::Color()) const {
 		const OpenGLWrapper& opengl = OpenGLWrapper::getOpenGLWrapper();
 
 		for(unsigned int i = 0; i < triangles.size(); ++i) {
 			const std::vector<fcl::Vec3f>& verts = vertices[i];
 			const std::vector<fcl::Triangle>& tris = triangles[i];
-			std::vector<double> pts(12, 1.0);
-			for(auto tri : tris) {
-				
-				pts[0] = verts[tri[0]][0];
-				pts[1] = verts[tri[0]][1];
-				pts[2] = verts[tri[0]][2];
-				
-				pts[4] = verts[tri[1]][0];
-				pts[5] = verts[tri[1]][1];
-				pts[6] = verts[tri[1]][2];
+			std::vector<double> pts(84, 1.0);
 
-				pts[8] = verts[tri[2]][0];
-				pts[9] = verts[tri[2]][1];
-				pts[10] = verts[tri[2]][2];
+			auto c = color.getColor();
+			for(auto tri : tris) {
+				unsigned int cur = 0;
+				for(unsigned int i = 0; i < 3; ++i) {
+					for(unsigned int j = 0; j < 3; ++j) {
+						pts[cur++] = verts[tri[i]][j];
+					}
+					cur++; // add one extra for the 4th vector component
+					for(unsigned int j = 0; j < 3; ++j) {
+						pts[cur++] = normals[tri[i]][j];
+					}
+					cur++; // add one extra for the 4th vector component
+					for(unsigned int j = 0; j < 4; ++j) {
+						pts[cur++] = c[j];
+					}
+					for(unsigned int j = 0; j < 16; ++j) {
+						pts[cur++] = transform[j];
+					}
+				}
 
 				opengl.drawTriangles(pts);
 				//opengl.drawPoints(pts);
@@ -82,6 +105,8 @@ private:
 	std::vector<fcl::CollisionObject *> worldObjects;
 	std::vector< std::vector<fcl::Vec3f> > vertices;
 	std::vector< std::vector<fcl::Triangle> > triangles;
+	std::vector< std::vector<double> > normals;
+	std::vector<double> transform;
 };
 
 class SimpleAgentMeshHandler {
@@ -93,7 +118,7 @@ public:
 			exit(0);
 		}
 
-		meshLoader.get(vertices, triangles);
+		meshLoader.get(vertices, triangles, normals);
 
 		fcl::Transform3f tf;
 		for(unsigned int i = 0; i < vertices.size(); i++) {
@@ -113,10 +138,48 @@ public:
 		return new fcl::CollisionObject(agentModel, tf);
 	}
 
+#ifdef WITHGRAPHICS
+	void draw(const OpenGLWrapper::Color &color = OpenGLWrapper::Color(),
+		const std::vector<double> &transform = OpenGLWrapper::getOpenGLWrapper().getIdentity()) const {
+		const OpenGLWrapper& opengl = OpenGLWrapper::getOpenGLWrapper();
+
+		for(unsigned int i = 0; i < triangles.size(); ++i) {
+			const std::vector<fcl::Vec3f>& verts = vertices[i];
+			const std::vector<fcl::Triangle>& tris = triangles[i];
+			std::vector<double> pts(84, 1.0);
+
+			auto c = color.getColor();
+			for(auto tri : tris) {
+				unsigned int cur = 0;
+				for(unsigned int i = 0; i < 3; ++i) {
+					for(unsigned int j = 0; j < 3; ++j) {
+						pts[cur++] = verts[tri[i]][j];
+					}
+					cur++; // add one extra for the 4th vector component
+					for(unsigned int j = 0; j < 3; ++j) {
+						pts[cur++] = normals[tri[i]][j];
+					}
+					cur++; // add one extra for the 4th vector component
+					for(unsigned int j = 0; j < 4; ++j) {
+						pts[cur++] = c[j];
+					}
+					for(unsigned int j = 0; j < 16; ++j) {
+						pts[cur++] = transform[j];
+					}
+				}
+
+				opengl.drawTriangles(pts);
+				//opengl.drawPoints(pts);
+			}
+		}
+	}
+#endif
+
 private:
 	boost::shared_ptr<Model> agentModel;
 	std::vector< std::vector<fcl::Vec3f> > vertices;
 	std::vector< std::vector<fcl::Triangle> > triangles;
+	std::vector< std::vector<double> > normals;
 };
 
 class MeshHandler {
