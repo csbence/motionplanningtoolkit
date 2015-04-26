@@ -81,7 +81,7 @@ public:
      @par Edges should be undirected and have a weight property.
      */
     typedef boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS,
-                                  boost::property<InternalState, const AgentState *,
+                                  boost::property<InternalState, AgentState,
                                                   boost::property<VertexTotalConnectionAttempts, unsigned long int,
                                                                   boost::property<VertexSuccessfulConnectionAttempts,
                                                                                   unsigned long int, boost::property<
@@ -97,25 +97,28 @@ public:
     /** @brief The type for an edge in the roadmap. */
     typedef typename boost::graph_traits<Graph>::edge_descriptor Edge;
 
-    template< typename Graph>
+    template<typename Graph>
     class VertexWrapper {
     public:
-        VertexWrapper(Vertex vertex, Graph &graph) : vertex(vertex), graph(graph) {
+        VertexWrapper(Vertex vertex, Graph &graph) : vertex(vertex),
+                                                     graph(graph) {
         }
+
+        AgentState foo() {
+            return AgentState();
+        };
 
         /* needed for being inserted into NN datastructure */
         const typename Agent::StateVars &getStateVars() const {
-            return boost::get(InternalState(), graph, vertex)->getStateVars();
+            return boost::get(InternalState(), graph, vertex).getStateVars();
         }
 
         int getPointIndex() const {
-            return boost::get(InternalState(), graph, vertex)->getPointIndex();
+            return boost::get(InternalState(), graph, vertex).getPointIndex();
         }
 
         void setPointIndex(int value) {
-//            stateProperty[vertex]->setPointIndex(value);
-            const AgentState *state = boost::get(InternalState(), graph, vertex);
-            state->setPointIndex(value);
+            boost::get(InternalState(), graph, vertex).setPointIndex(value);
         }
 
         Vertex getVertex() const {
@@ -159,9 +162,9 @@ public:
               addedNewSolution_(false),
               iterations_(0) {
 
-
         steeringDT = stod(args.value("Steering Delta t"));
         collisionCheckDT = stod(args.value("Collision Check Delta t"));
+
     }
 
     ~PRM() {
@@ -176,18 +179,24 @@ public:
         goal.draw();
 #endif
 
+        fprintf(stdout, "Solving PRM...!\n");
+
+
         if (firstInvocation && agent.isGoal(start, goal)) {
             return true;
         }
 
         // Sample 10k points
-        for (int i = 0; i < 10000; i++) {
+        for (int i = 0; i < 10; i++) {
 
 
             addMilestone(sampler.sampleConfiguration());
             // TODO Validate sample
 
         }
+
+        fprintf(stdout, "PRM solved!\n");
+
 
 //#ifdef WITHGRAPHICS
 //        for (const Edge *edge : treeEdges) {
@@ -464,7 +473,7 @@ protected:
         Vertex sourceVertex = boost::add_vertex(graph);
 
         // Set the internal state to the target state
-        stateProperty[sourceVertex] = &sourceState;
+        stateProperty[sourceVertex] = sourceState;
         totalConnectionAttemptsProperty[sourceVertex] = 1;
         successfulConnectionAttemptsProperty[sourceVertex] = 0;
 
@@ -476,6 +485,8 @@ protected:
         // Which milestones will we attempt to connect to?
         typename KDTree::KNNResult near = nn.kNearest(sourceWrapper, 10);
 
+        sourceState.draw();
+
         const std::vector<VertexWrapper<Graph> *> neighbors = near.elements;
                 foreach(VertexWrapper<Graph> *neighbor, neighbors) {
 
@@ -484,10 +495,12 @@ protected:
                         totalConnectionAttemptsProperty[sourceVertex]++;
                         totalConnectionAttemptsProperty[targetVertex]++;
 
-                        auto edge = agent.steer(sourceState, *stateProperty[targetVertex], steeringDT);
+                        auto edge = agent.steer(sourceState, stateProperty[targetVertex], steeringDT);
 
                         // Validate edge
                         if (workspace.safeEdge(agent, edge, collisionCheckDT)) {
+
+                            edge.draw();
 
                             // Increment the successful connection attempts on both ends 
                             successfulConnectionAttemptsProperty[sourceVertex]++;

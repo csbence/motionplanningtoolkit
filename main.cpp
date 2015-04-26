@@ -62,10 +62,10 @@ int main(int argc, char *argv[]) {
 
 	Sampler sampler(workspace, agent);	
 
-	KDTreeType kdtreeType;
-	KDTree kdtree(kdtreeType, 3);
-
-	Planner planner(workspace, agent, sampler, kdtree, args);
+//	KDTreeType kdtreeType;
+//	KDTree kdtree(kdtreeType, 3);
+//
+//	Planner planner(workspace, agent, sampler, kdtree, args);
 
 	PrmPlanner prmPlanner(workspace, agent, sampler, args);
 
