@@ -28,8 +28,7 @@ typedef flann::KDTreeSingleIndexParams KDTreeType;
 typedef FLANN_KDTreeWrapper<KDTreeType, flann::L2<double>, Agent::Edge> KDTree;
 typedef RRT<Workspace, Agent, Sampler, KDTree> Planner;
 
-typedef FLANN_KDTreeWrapper<KDTreeType, flann::L2<double>, PRM::VertexWrapper> KDTreeState;
-typedef PRM<Workspace, Agent, Sampler, KDTreeState> PrmPlanner;
+typedef PRM<Workspace, Agent, Sampler> PrmPlanner;
 
 std::vector<double> parseDoubles(const std::string &str) {
 	std::vector<double> values;
@@ -68,8 +67,7 @@ int main(int argc, char *argv[]) {
 
 	Planner planner(workspace, agent, sampler, kdtree, args);
 
-	KDTreeState kdtreePrm(kdtreeType, 3);
-	PrmPlanner prmPlanner(workspace, agent, sampler, kdtreePrm, args);
+	PrmPlanner prmPlanner(workspace, agent, sampler, args);
 
 	#ifdef WITHGRAPHICS
 		bool firstInvocation = true;

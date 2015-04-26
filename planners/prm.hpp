@@ -17,6 +17,8 @@
 #include <vector>
 #include <map>
 
+#include "../utilities/flannkdtreewrapper.hpp"
+
 
 #define foreach BOOST_FOREACH
 
@@ -41,7 +43,7 @@
 */
 
 /** \brief Probabilistic RoadMap planner */
-template<class Workspace, class fAgent, class Sampler, class NN>
+template<class Workspace, class Agent, class Sampler>
 class PRM {
 public:
     typedef typename Agent::State AgentState;
@@ -79,7 +81,7 @@ public:
      @par Edges should be undirected and have a weight property.
      */
     typedef boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS,
-                                  boost::property<InternalState, AgentState *,
+                                  boost::property<InternalState, const AgentState *,
                                                   boost::property<VertexTotalConnectionAttempts, unsigned long int,
                                                                   boost::property<VertexSuccessfulConnectionAttempts,
                                                                                   unsigned long int, boost::property<
@@ -95,51 +97,60 @@ public:
     /** @brief The type for an edge in the roadmap. */
     typedef typename boost::graph_traits<Graph>::edge_descriptor Edge;
 
+    template< typename Graph>
     class VertexWrapper {
     public:
-        VertexWrapper(Vertex &vertex) : vertex(vertex) {
+        VertexWrapper(Vertex vertex, Graph &graph) : vertex(vertex), graph(graph) {
         }
 
         /* needed for being inserted into NN datastructure */
         const typename Agent::StateVars &getStateVars() const {
-            return boost::get(InternalState(), vertex).getStateVars();
+            return boost::get(InternalState(), graph, vertex)->getStateVars();
         }
 
         int getPointIndex() const {
-            return boost::get(InternalState(), vertex).getPointIndex();
+            return boost::get(InternalState(), graph, vertex)->getPointIndex();
         }
 
         void setPointIndex(int value) {
-            boost::get(InternalState(), vertex).setPointIndex(value);
+//            stateProperty[vertex]->setPointIndex(value);
+            const AgentState *state = boost::get(InternalState(), graph, vertex);
+            state->setPointIndex(value);
         }
 
-        Vertex &getVertex() {
+        Vertex getVertex() const {
             return vertex;
         }
 
+//        static void setGraph(Graph &g) {
+//            graph = g;
+//        }
+
+//        static void setStateProperty(typename boost::property_map<Graph, InternalState>::type &propertyMap) {
+//            stateProperty = propertyMap;
+//        }
+
     private:
-        Vertex &vertex;
+//        static typename boost::property_map<Graph, InternalState>::type &stateProperty;
+        const Vertex vertex;
+        Graph &graph;
     };
 
-    /** @brief A nearest neighbors data structure for roadmap vertices. */
-    typedef boost::shared_ptr<NearestNeighbors<Vertex>> RoadmapNeighbors;
+    typedef flann::KDTreeSingleIndexParams KDTreeType;
 
-    /** @brief A function returning the milestones that should be
-     * attempted to connect to. */
-    typedef boost::function<const std::vector<Vertex> &(const Vertex)> ConnectionStrategy;
+    typedef FLANN_KDTreeWrapper<KDTreeType, flann::L2<double>, VertexWrapper<Graph>> KDTree;
 
-    /** @brief A function that can reject connections.
+    template<typename A>
+    class T {
+    private:
+        static int foo;
+    };
 
-     This is called after previous connections from the neighbor list
-     have been added to the roadmap.
-     */
-    typedef boost::function<bool(const Vertex &, const Vertex &)> ConnectionFilter;
-
-    PRM(const Workspace &workspace, const Agent &agent, const Sampler &sampler, NN &nn, const InstanceFileMap &args)
+    PRM(const Workspace &workspace, const Agent &agent, const Sampler &sampler, const InstanceFileMap &args)
             : workspace(workspace),
               agent(agent),
               sampler(sampler),
-              nn(nn),
+              nn(KDTree(KDTreeType(), 3)),
               stateProperty(boost::get(InternalState(), graph)),
               totalConnectionAttemptsProperty(boost::get(VertexTotalConnectionAttempts(), graph)),
               successfulConnectionAttemptsProperty(boost::get(VertexSuccessfulConnectionAttempts(), graph)),
@@ -147,6 +158,7 @@ public:
               internalEdgeProperty(boost::get(InternalEdge(), graph)),
               addedNewSolution_(false),
               iterations_(0) {
+
 
         steeringDT = stod(args.value("Steering Delta t"));
         collisionCheckDT = stod(args.value("Collision Check Delta t"));
@@ -164,34 +176,24 @@ public:
         goal.draw();
 #endif
 
-        if (firstInvocation) {
-            if (agent.isGoal(start, goal)) {
-                return true;
-            }
-
-//            auto root = pool.construct(start, start, 0);
-//
-//            nn.insertPoint(root);
+        if (firstInvocation && agent.isGoal(start, goal)) {
+            return true;
         }
 
-        unsigned int iterations = 0;
+        // Sample 10k points
+        for (int i = 0; i < 10000; i++) {
 
-        while (true) {
-            // Sample 10k points
-            for (int i = 0; i < 10000; i++) {
-//                nn.insertPoint(sampler.sampleConfiguration());
 
-                addMilestone(sampler.sampleConfiguration());
-                // TODO Validate sample
-            }
+            addMilestone(sampler.sampleConfiguration());
+            // TODO Validate sample
 
         }
 
-#ifdef WITHGRAPHICS
-        for (const Edge *edge : treeEdges) {
-            edge->draw();
-        }
-#endif
+//#ifdef WITHGRAPHICS
+//        for (const Edge *edge : treeEdges) {
+//            edge->draw();
+//        }
+//#endif
 
         return false;
     }
@@ -455,49 +457,52 @@ protected:
 
     /** \brief Construct a milestone for a given state (\e state), store it in the nearest neighbors data structure
     and then connect it to the roadmap in accordance to the connection strategy. */
-    Vertex addMilestone(const AgentState &sourceState) {
+    Vertex addMilestone(AgentState sourceState) {
 //        boost::mutex::scoped_lock _(graphMutex_);
 
         // Create a new vertex in the graph
-        const Vertex sourceVertex = boost::add_vertex(graph);
+        Vertex sourceVertex = boost::add_vertex(graph);
 
         // Set the internal state to the target state
-        stateProperty[sourceVertex] = sourceState;
+        stateProperty[sourceVertex] = &sourceState;
         totalConnectionAttemptsProperty[sourceVertex] = 1;
         successfulConnectionAttemptsProperty[sourceVertex] = 0;
 
         // Initialize to its own (dis)connected component.
         disjointSets.make_set(sourceVertex);
 
-        nn.insertPoint(vertexWrapperPool.construct(sourceVertex));
+        auto *sourceWrapper = vertexWrapperPool.construct(sourceVertex, graph);
 
         // Which milestones will we attempt to connect to?
-        std::vector<VertexWrapper> &neighbors = nn.kNearest(sourceVertex, 10); // TODO
-                foreach(Vertex neighbor, neighbors) {
+        typename KDTree::KNNResult near = nn.kNearest(sourceWrapper, 10);
 
-                        auto targetVertex = neighbor.getVertex();
+        const std::vector<VertexWrapper<Graph> *> neighbors = near.elements;
+                foreach(VertexWrapper<Graph> *neighbor, neighbors) {
+
+                        auto targetVertex = neighbor->getVertex();
 
                         totalConnectionAttemptsProperty[sourceVertex]++;
                         totalConnectionAttemptsProperty[targetVertex]++;
 
-                        auto edge = agent.steer(sourceState, stateProperty[targetVertex], steeringDT);
+                        auto edge = agent.steer(sourceState, *stateProperty[targetVertex], steeringDT);
 
                         // Validate edge
                         if (workspace.safeEdge(agent, edge, collisionCheckDT)) {
 
                             // Increment the successful connection attempts on both ends 
                             successfulConnectionAttemptsProperty[sourceVertex]++;
-                            successfulConnectionAttemptsProperty[neighbor]++;
+                            successfulConnectionAttemptsProperty[targetVertex]++;
 
-                            InternalEdge targetEdge = pool.construct(edge.start, edge.end, edge.cost);
+                            auto *targetEdge = agentEdgePool.construct(edge.start, edge.end, edge.cost);
                             typename Graph::edge_property_type properties(targetEdge);
 
-                            boost::add_edge(neighbor, sourceVertex, properties, graph);
-                            uniteComponents(neighbor, sourceVertex);
+                            boost::add_edge(targetVertex, sourceVertex, properties, graph);
+                            uniteComponents(targetVertex, sourceVertex);
                         }
                     }
 
-        nn.insertPoint(sourceVertex);
+
+        nn.insertPoint(sourceWrapper);
 
         return sourceVertex;
     }
@@ -602,9 +607,9 @@ protected:
     const Workspace &workspace;
     const Agent &agent;
     const Sampler &sampler;
-    NN &nn;
-    boost::object_pool<Edge> pool;
-    boost::object_pool<VertexWrapper> vertexWrapperPool;
+    KDTree nn;
+    boost::object_pool<AgentEdge> agentEdgePool;
+    boost::object_pool<VertexWrapper<Graph>> vertexWrapperPool;
 
     std::vector<const Edge *> treeEdges;
 
