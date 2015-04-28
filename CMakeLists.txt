@@ -34,6 +34,7 @@ include_directories(
 	${ASSIMP_LIBRARY_DIRS}
 	${BULLET_LIBRARY_DIRS}
 	"/usr/local/include/bullet"
+	"/opt/local/include/bullet" #For OS X
 )
 
 target_link_libraries(Planner

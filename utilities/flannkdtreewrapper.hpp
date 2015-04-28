@@ -62,7 +62,7 @@ public:
 
 		auto stateVars = elem->getStateVars();
 		flann::Matrix<double> point(stateVars.data(), 1, stateVars.size());
-		
+
 		std::vector< std::vector<int> > indices;
 		std::vector< std::vector<double> > distances;
 
@@ -76,20 +76,20 @@ public:
 			fprintf(stderr, "%zu\n", kdtree.size());
 		}
 
-		for(unsigned int i = 0; i < indices.size(); ++i) {
-			if(indices[i].size() <= 0) continue;
+		const int s = indices[0].size();
 
-			result.elements.push_back(lookup.at(indices[i][0]).data);
-			result.distances.push_back(distances[i][0]);
+		for(unsigned int i = 0; i < s; ++i) {
+			result.elements.push_back(lookup.at(indices[0][i]).data);
+			result.distances.push_back(distances[0][i]);
 		}
 
 		return result;
-	}
+	};
 
 	KNNResult kNearestWithin(const Element *elem, double radius, int max_neighbors=-1) const {
 		auto stateVars = elem->getStateVars();
 		flann::Matrix<double> point(stateVars.data(), 1, stateVars.size());
-		
+
 		std::vector< std::vector<int> > indices;
 		std::vector< std::vector<double> > distances;
 

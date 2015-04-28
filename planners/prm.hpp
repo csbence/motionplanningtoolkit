@@ -13,15 +13,12 @@
 #include <boost/pending/disjoint_sets.hpp>
 #include <boost/function.hpp>
 #include <boost/thread.hpp>
+#include <chrono>
 #include <utility>
 #include <vector>
 #include <map>
 
 #include "../utilities/flannkdtreewrapper.hpp"
-
-
-#define foreach BOOST_FOREACH
-
 
 /**
    @anchor gPRM
@@ -125,14 +122,6 @@ public:
             return vertex;
         }
 
-//        static void setGraph(Graph &g) {
-//            graph = g;
-//        }
-
-//        static void setStateProperty(typename boost::property_map<Graph, InternalState>::type &propertyMap) {
-//            stateProperty = propertyMap;
-//        }
-
     private:
 //        static typename boost::property_map<Graph, InternalState>::type &stateProperty;
         const Vertex vertex;
@@ -143,11 +132,7 @@ public:
 
     typedef FLANN_KDTreeWrapper<KDTreeType, flann::L2<double>, VertexWrapper<Graph>> KDTree;
 
-    template<typename A>
-    class T {
-    private:
-        static int foo;
-    };
+    typedef std::chrono::duration<int, std::milli> Millisecond;
 
     PRM(const Workspace &workspace, const Agent &agent, const Sampler &sampler, const InstanceFileMap &args)
             : workspace(workspace),
@@ -158,9 +143,8 @@ public:
               totalConnectionAttemptsProperty(boost::get(VertexTotalConnectionAttempts(), graph)),
               successfulConnectionAttemptsProperty(boost::get(VertexSuccessfulConnectionAttempts(), graph)),
               disjointSets(boost::get(boost::vertex_rank, graph), boost::get(boost::vertex_predecessor, graph)),
-              internalEdgeProperty(boost::get(InternalEdge(), graph)),
-              addedNewSolution_(false),
-              iterations_(0) {
+              edgeProperty(boost::get(InternalEdge(), graph)),
+              solutionFound(false), {
 
         steeringDT = stod(args.value("Steering Delta t"));
         collisionCheckDT = stod(args.value("Collision Check Delta t"));
@@ -173,36 +157,54 @@ public:
 
     bool query(const AgentState &start, const AgentState &goal, int iterationsAtATime = -1, bool firstInvocation = true) {
 
+
 #ifdef WITHGRAPHICS
         // Draw start end goal states
         start.draw();
         goal.draw();
+
+        for (auto vertex : boost::make_iterator_range(boost::vertices(graph))) {
+            const AgentState agentState = stateProperty(vertex);
+            agentState.draw();
+        }
+
+        for (auto edge : boost::make_iterator_range(boost::edges(graph))) {
+            const AgentEdge *const agentEdge = edgeProperty(edge);
+            agentEdge->draw();
+        }
 #endif
-
-        fprintf(stdout, "Solving PRM...!\n");
-
 
         if (firstInvocation && agent.isGoal(start, goal)) {
             return true;
         }
 
-        // Sample 10k points
-        for (int i = 0; i < 10; i++) {
+        std::chrono::steady_clock::time_point startTime = std::chrono::steady_clock::now();
 
-
-            addMilestone(sampler.sampleConfiguration());
-            // TODO Validate sample
-
+        if (firstInvocation) {
+            startVertex = addMilestone(start);
+            goalVertex = addMilestone(goal);
         }
 
-        fprintf(stdout, "PRM solved!\n");
+        if (solutionFound) {
+            fprintf(stdout, "Solution found. \n");
+            return false;
+        } else {
 
+            // Sample 10k points
+            for (int i = 0; i < 20; i++) {
+                addMilestone(sampler.sampleConfiguration());
+                // TODO Validate sample
 
-//#ifdef WITHGRAPHICS
-//        for (const Edge *edge : treeEdges) {
-//            edge->draw();
-//        }
-//#endif
+            }
+
+            solutionFound = sameComponent(startVertex, goalVertex);
+        }
+
+        std::chrono::steady_clock::time_point endTime = std::chrono::steady_clock::now();
+
+        Millisecond duration(std::chrono::duration_cast<Millisecond>(endTime - startTime));
+
+        fprintf(stdout, "PRM solved[%s] in %d[ms]\n", solutionFound ? "true" : "false", duration.count());
 
         return false;
     }
@@ -223,91 +225,7 @@ public:
 
 protected:
 
-//    /** \brief Compute distance between two milestones (this is simply distance between the states of the milestones) */
-//    double distanceFunction(const Vertex a, const Vertex b) const {
-//        return si_->distance(stateProperty_[a], stateProperty_[b]);
-//    }
 
-    /** \brief Attempt to connect disjoint components in the
-    roadmap using random bounding motions (the PRM
-    expansion step) */
-/*    void expandRoadmap(const base::PlannerTerminationCondition &ptc, std::vector<base::State *> &workStates) {
-        // construct a probability distribution over the vertices in the roadmap
-        // as indicated in
-        //  "Probabilistic Roadmaps for Path Planning in High-Dimensional Configuration Spaces"
-        //        Lydia E. Kavraki, Petr Svestka, Jean-Claude Latombe, and Mark H. Overmars
-
-
-        PDF <Vertex> pdf;
-                foreach(Vertex v, boost::vertices(graph)) {
-                        const unsigned long int t = totalConnectionAttemptsProperty[v];
-                        pdf.add(v, (double) (t - successfulConnectionAttemptsProperty[v]) / (double) t);
-                    }
-
-        if (pdf.empty())
-            return;
-
-        while (ptc == false) {
-            iterations_++;
-            Vertex pdfVertex = pdf.sample(rngraph.uniform01());
-            unsigned int s = si_
-                    ->randomBounceMotion(simpleSampler_, stateProperty_[pdfVertex], workStates.size(), workStates,
-                                         false);
-            if (s > 0) {
-                s--;
-                Vertex last = addMilestone(si_->cloneState(workStates[s]));
-
-                graphMutex_.lock();
-                for (unsigned int i = 0; i < s; ++i) {
-                    // add the vertex along the bouncing motion
-                    Vertex m = boost::add_vertex(graph);
-                    stateProperty_[m] = si_->cloneState(workStates[i]);
-                    totalConnectionAttemptsProperty[m] = 1;
-                    successfulConnectionAttemptsProperty[m] = 0;
-                    disjointSets.make_set(m);
-
-                    // add the edge to the parent vertex
-                    const base::Cost weight = opt_->motionCost(stateProperty_[pdfVertex], stateProperty_[m]);
-                    const Graph::edge_property_type properties(weight);
-                    boost::add_edge(pdfVertex, m, properties, graph);
-                    uniteComponents(pdfVertex, m);
-
-                    // add the vertex to the nearest neighbors data structure
-                    nn_->add(m);
-                    pdfVertex = m;
-                }
-
-                // if there are intermediary states or the milestone has not been connected to the initially sampled vertex,
-                // we add an edge
-                if (s > 0 || !sameComponent(pdfVertex, last)) {
-                    // add the edge to the parent vertex
-                    const base::Cost weight = opt_->motionCost(stateProperty_[pdfVertex], stateProperty_[last]);
-                    const Graph::edge_property_type properties(weight);
-                    boost::add_edge(pdfVertex, last, properties, graph);
-                    uniteComponents(pdfVertex, last);
-                }
-                graphMutex_.unlock();
-            }
-        }
-    } */
-
-//    /** \brief Randomly sample the state space, add and connect milestones
-//     in the roadmap. Stop this process when the termination condition
-//     \e ptc returns true.  Use \e workState as temporary memory. */
-//    void growRoadmap(const unsigned int interations) {
-//        /* grow roadmap in the regular fashion -- sample valid states, add them to the roadmap, add valid connections */
-//        for (int i = 0; i < iterations; i++) {
-//            iterations_++;
-//            // search for a valid state
-//            bool found = false;
-//            while (!found) {
-//                found = sampler.sampleConfiguration();
-//            }
-//            // add it as a milestone
-//            if (found)
-//                addMilestone(si_->cloneState(workState));
-//        }
-//    }
 
 //    /** Thread that checks for solution */
 //    void checkForSolution(const base::PlannerTerminationCondition &ptc, base::PathPtr &solution) {
@@ -333,8 +251,8 @@ protected:
 //            Vertex> &goals, base::PathPtr &solution) {
 //        base::Goal *g = pdef_->getGoal().get();
 //        base::Cost sol_cost(opt_->infiniteCost());
-//                foreach(Vertex
-//                                start, starts) {
+//                for(Vertex
+//                                start : starts) {
 //                                foreach(Vertex
 //                                                goal, goals) {
 //                                        // we lock because the connected components algorithm is incremental and may change disjointSets
@@ -363,82 +281,6 @@ protected:
 //                    }
 //
 //        return false;
-//    }
-
-//    /** \brief Returns the value of the addedNewSolution_ member. */
-//    bool addedNewSolution() const {
-//        return addedNewSolution_;
-//    }
-
-//    /** \brief Function that can solve the motion planning
-//    problem. Grows a roadmap using
-//    constructRoadmap(). This function can be called
-//    multiple times on the same problem, without calling
-//    clear() in between. This allows the planner to
-//    continue work for more time on an unsolved problem,
-//    for example. Start and goal states from the currently
-//    specified ProblemDefinition are cached. This means
-//    that between calls to solve(), input states are only
-//    added, not removed. When using PRM as a multi-query
-//    planner, the input states should be however cleared,
-//    without clearing the roadmap itself. This can be done
-//    using the clearQuery() function. */
-//    ompl::base::PlannerStatus solve(const base::PlannerTerminationCondition &ptc) {
-//        base::GoalSampleableRegion *goal = dynamic_cast<base::GoalSampleableRegion *>(pdef_->getGoal().get());
-//
-//        if (!goal) {
-//            OMPL_ERROR("%s: Unknown type of goal", getName().c_str());
-//            return base::PlannerStatus::UNRECOGNIZED_GOAL_TYPE;
-//        }
-//
-//        // Add the valid start states as milestones
-//        while (const base::State *st = pis_.nextStart())
-//            startM_.push_back(addMilestone(si_->cloneState(st)));
-//
-//        if (startM_.size() == 0) {
-//            OMPL_ERROR("%s: There are no valid initial states!", getName().c_str());
-//            return base::PlannerStatus::INVALID_START;
-//        }
-//
-//        if (!goal->couldSample()) {
-//            OMPL_ERROR("%s: Insufficient states in sampleable goal region", getName().c_str());
-//            return base::PlannerStatus::INVALID_GOAL;
-//        }
-//
-//        // Ensure there is at least one valid goal state
-//        if (goal->maxSampleCount() > goalM_.size() || goalM_.empty()) {
-//            const base::State *st = goalM_.empty() ? pis_.nextGoal(ptc) : pis_.nextGoal();
-//            if (st)
-//                goalM_.push_back(addMilestone(si_->cloneState(st)));
-//
-//            if (goalM_.empty()) {
-//                OMPL_ERROR("%s: Unable to find any valid goal states", getName().c_str());
-//                return base::PlannerStatus::INVALID_GOAL;
-//            }
-//        }
-//
-//        unsigned long int nrStartStates = boost::num_vertices(graph);
-//        OMPL_INFORM("%s: Starting planning with %lu states already in datastructure", getName().c_str(), nrStartStates);
-//
-//        // Reset addedNewSolution_ member and create solution checking thread
-//        addedNewSolution_ = false;
-//        base::PathPtr solutionPathPrt;
-//        boost::thread slnThread(boost::bind(&PRM::checkForSolution, this, ptc, boost::ref(solutionPathPrt)));
-//
-//
-//        // construct new planner termination condition that fires when the given ptc is true, or a solution is found
-//        base::PlannerTerminationCondition ptcOrSolutionFound = base::plannerOrTerminationCondition(ptc,
-//                                                                                                   base::PlannerTerminationCondition(
-//                                                                                                           boost::bind(
-//                                                                                                                   &PRM::addedNewSolution,
-//                                                                                                                   this)));
-//
-//        constructRoadmap(ptcOrSolutionFound);
-//
-//        // Ensure slnThread is ceased before exiting solve
-//        slnThread.join();
-//
-//        return solutionPathPrt ? base::PlannerStatus::EXACT_SOLUTION : base::PlannerStatus::TIMEOUT;
 //    }
 
 //    /** \brief While the termination condition allows, this function will construct the roadmap (using growRoadmap() and expandRoadmap(),
@@ -472,7 +314,7 @@ protected:
         // Create a new vertex in the graph
         Vertex sourceVertex = boost::add_vertex(graph);
 
-        // Set the internal state to the target state
+        // Set the internal state of the source vertex to the source state
         stateProperty[sourceVertex] = sourceState;
         totalConnectionAttemptsProperty[sourceVertex] = 1;
         successfulConnectionAttemptsProperty[sourceVertex] = 0;
@@ -487,32 +329,36 @@ protected:
 
         sourceState.draw();
 
-        const std::vector<VertexWrapper<Graph> *> neighbors = near.elements;
-                foreach(VertexWrapper<Graph> *neighbor, neighbors) {
+        const std::vector<VertexWrapper<Graph> *> &neighbors = near.elements;
 
-                        auto targetVertex = neighbor->getVertex();
+        fprintf(stdout, "<%d>", neighbors.size());
 
-                        totalConnectionAttemptsProperty[sourceVertex]++;
-                        totalConnectionAttemptsProperty[targetVertex]++;
 
-                        auto edge = agent.steer(sourceState, stateProperty[targetVertex], steeringDT);
+        for (const VertexWrapper<Graph> *neighborWrapper : neighbors) {
 
-                        // Validate edge
-                        if (workspace.safeEdge(agent, edge, collisionCheckDT)) {
+            auto targetVertex = neighborWrapper->getVertex();
 
-                            edge.draw();
+            totalConnectionAttemptsProperty[sourceVertex]++;
+            totalConnectionAttemptsProperty[targetVertex]++;
 
-                            // Increment the successful connection attempts on both ends 
-                            successfulConnectionAttemptsProperty[sourceVertex]++;
-                            successfulConnectionAttemptsProperty[targetVertex]++;
+            auto edge = agent.steer(sourceState, stateProperty[targetVertex], 1000);
 
-                            auto *targetEdge = agentEdgePool.construct(edge.start, edge.end, edge.cost);
-                            typename Graph::edge_property_type properties(targetEdge);
+            // Validate edge
+            if (workspace.safeEdge(agent, edge, collisionCheckDT)) {
 
-                            boost::add_edge(targetVertex, sourceVertex, properties, graph);
-                            uniteComponents(targetVertex, sourceVertex);
-                        }
-                    }
+                edge.draw();
+
+                // Increment the successful connection attempts on both ends
+                successfulConnectionAttemptsProperty[sourceVertex]++;
+                successfulConnectionAttemptsProperty[targetVertex]++;
+
+                auto *targetEdge = agentEdgePool.construct(edge.start, edge.end, edge.cost);
+                typename Graph::edge_property_type properties(targetEdge);
+
+                boost::add_edge(targetVertex, sourceVertex, properties, graph);
+                uniteComponents(targetVertex, sourceVertex);
+            }
+        }
 
 
         nn.insertPoint(sourceWrapper);
@@ -559,26 +405,6 @@ protected:
 //        return base::PathPtr(p);
 //    }
 
-//    /** \brief Given two vertices, returns a heuristic on the cost of the path connecting them.
-//    This method wraps OptimizationObjective::motionCostHeuristic */
-//    ompl::base::Cost costHeuristic(Vertex u, Vertex v) const {
-//        return opt_->motionCostHeuristic(stateProperty_[u], stateProperty_[v]);
-//    }
-
-    ///////////////////////////////////////
-    // Planner progress property functions
-    std::string getIterationCount() const {
-        return boost::lexical_cast<std::string>(iterations_);
-    }
-
-    std::string getMilestoneCountString() const {
-        return boost::lexical_cast<std::string>(milestoneCount());
-    }
-
-    std::string getEdgeCountString() const {
-        return boost::lexical_cast<std::string>(edgeCount());
-    }
-
     /** \brief Connectivity graph */
     Graph graph;
 
@@ -592,31 +418,13 @@ protected:
     typename boost::property_map<Graph, VertexSuccessfulConnectionAttempts>::type successfulConnectionAttemptsProperty;
 
     /** \brief Access to the internal Agent::Edge at each Edge */
-    typename boost::property_map<Graph, InternalEdge>::type internalEdgeProperty;
+    typename boost::property_map<Graph, InternalEdge>::type edgeProperty;
 
     /** \brief Data structure that maintains the connected components */
     typename boost::disjoint_sets<typename boost::property_map<Graph, boost::vertex_rank_t>::type,
                                   typename boost::property_map<Graph, boost::vertex_predecessor_t>::type> disjointSets;
 
-    /** \brief Random number generator */
-//    RNG rngraph;
-
-    /** \brief A flag indicating that a solution has been added during solve() */
-    bool addedNewSolution_;
-
-    /** \brief Mutex to guard access to the Graph member (graph) */
-    mutable boost::mutex graphMutex_;
-
-    //////////////////////////////
-    // Planner progress properties
-    /** \brief Number of iterations the algorithm performed */
-    unsigned long int iterations_;
-
-    /** \brief Best cost found so far by algorithm */
-//    base::Cost bestCost_; // TODO replace
-
     // Motion Planning Toolkit //
-
     const Workspace &workspace;
     const Agent &agent;
     const Sampler &sampler;
@@ -625,6 +433,10 @@ protected:
     boost::object_pool<VertexWrapper<Graph>> vertexWrapperPool;
 
     std::vector<const Edge *> treeEdges;
+    Vertex startVertex;
+    Vertex goalVertex;
+    bool solutionFound;
+
 
     double steeringDT, collisionCheckDT;
 };

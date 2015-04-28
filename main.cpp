@@ -25,8 +25,8 @@ typedef Omnidirectional Agent;
 //typedef Dubins Agent;
 typedef Map3D<Agent> Workspace;
 typedef GridDiscretization<Workspace, Agent> Discretization;
-//typedef UniformSampler<Workspace, Agent> Sampler;
-typedef FBiasedSampler<Workspace, Agent, Discretization> Sampler;
+typedef UniformSampler<Workspace, Agent> Sampler;
+//typedef FBiasedSampler<Workspace, Agent, Discretization> Sampler;
 
 typedef flann::KDTreeSingleIndexParams KDTreeType;
 typedef FLANN_KDTreeWrapper<KDTreeType, flann::L2<double>, Agent::Edge> KDTree;
@@ -62,21 +62,21 @@ int main(int argc, char *argv[]) {
 	std::vector<double> discretizations(3, 0.1);
 	Discretization discretization(workspace, agent, discretizations);
 
-	Sampler sampler(workspace, agent, discretization, start, goal, 4);
+//	Sampler sampler(workspace, agent, discretization, start, goal, 4);
 
-	//Sampler sampler(workspace, agent);
+	Sampler sampler(workspace, agent);
 
-//	KDTreeType kdtreeType;
-//	KDTree kdtree(kdtreeType, 3);
+	KDTreeType kdtreeType;
+	KDTree kdtree(kdtreeType, 3);
 //
-//	Planner planner(workspace, agent, sampler, kdtree, args);
+	Planner planner(workspace, agent, sampler, kdtree, args);
 
 	PrmPlanner prmPlanner(workspace, agent, sampler, args);
 
 	#ifdef WITHGRAPHICS
 		bool firstInvocation = true;
 		auto lambda = [&](){
-			planner.query(start, goal, 100, firstInvocation);
+			prmPlanner.query(start, goal, 100, firstInvocation);
 			firstInvocation = false;
 			agent.draw();
 			workspace.draw();

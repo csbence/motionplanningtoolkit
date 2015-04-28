@@ -35,8 +35,8 @@ class OpenGLWrapper {
 
 
 	// Shader sources
-	const GLchar *vertexSource = "../utilities/shaders/shader.vert";
-	const GLchar *fragmentSource = "../utilities/shaders/shader.frag";
+	const GLchar *vertexSource = "/Users/bencecserna/Documents/Development/projects/motionplanningtoolkit/motionplanningtoolkit/utilities/shaders/shader.vert";
+	const GLchar *fragmentSource = "/Users/bencecserna/Documents/Development/projects/motionplanningtoolkit/motionplanningtoolkit/utilities/shaders/shader.frag";
 
 public:
 
