@@ -40,6 +40,8 @@ public:
 		double y() const { return stateVars[1]; }
 		double z() const { return stateVars[2]; }
 		const StateVars& getStateVars() const { return stateVars; }
+		int getPointIndex() const { return treeIndex; }
+		void setPointIndex(int ptInd) { treeIndex = ptInd; }
 
 #ifdef WITHGRAPHICS
 		void draw(const OpenGLWrapper::Color &color = OpenGLWrapper::Color()) const {
@@ -60,6 +62,7 @@ public:
 
 	private:
 		StateVars stateVars;
+		int treeIndex;
 	};
 
 	class Edge {
