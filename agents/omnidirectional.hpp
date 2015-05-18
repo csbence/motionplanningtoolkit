@@ -147,7 +147,7 @@ public:
 					startY + dy * fraction,
 					startZ + dz * fraction);
 
-		return Edge(start, state, dt);
+		return Edge(start, state, dist);
 	}
 
 	Edge steer(const State &start, const State &goal) const {
@@ -169,7 +169,7 @@ public:
 					startY + randY / dist,
 					startZ + randZ / dist);
 
-		return Edge(start, state, dt);
+		return Edge(start, state, dist);
 	}
 
 	const SimpleAgentMeshHandler& getMesh() const {
