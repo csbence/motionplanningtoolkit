@@ -4,6 +4,7 @@
 #include <boost/pool/object_pool.hpp>
 #include <boost/lambda/bind.hpp>
 #include <boost/graph/astar_search.hpp>
+#include <boost/graph/dijkstra_shortest_paths.hpp>
 #include <boost/graph/incremental_components.hpp>
 #include <boost/property_map/vector_property_map.hpp>
 #include <boost/foreach.hpp>
@@ -86,7 +87,7 @@ public:
                                                                                   unsigned long int,
                                                                                   boost::property<boost::vertex_rank_t,
                                                                                                   unsigned long int> > > > >,
-                                  boost::property<InternalEdge, AgentEdge *> > Graph;
+                                  boost::property<InternalEdge, AgentEdge *, boost::property<boost::edge_weight_t, double> > > Graph;
 
     /** @brief The type for a vertex in the roadmap. */
     typedef typename boost::graph_traits<Graph>::vertex_descriptor Vertex;
@@ -144,7 +145,8 @@ public:
               successfulConnectionAttemptsProperty(boost::get(VertexSuccessfulConnectionAttempts(), graph)),
               disjointSets(boost::get(boost::vertex_rank, graph), boost::get(boost::vertex_predecessor, graph)),
               edgeProperty(boost::get(InternalEdge(), graph)),
-              solutionFound(false), {
+              edgeWeightProperty(boost::get(boost::edge_weight, graph)),
+              solutionFound(false) {
 
         steeringDT = stod(args.value("Steering Delta t"));
         collisionCheckDT = stod(args.value("Collision Check Delta t"));
@@ -186,12 +188,18 @@ public:
         }
 
         if (solutionFound) {
-            fprintf(stdout, "Solution found. \n");
+//            fprintf(stdout, "Solution found. \n");
+
+//            boost::dijkstra_shortest_paths(graph, goalVertex,
+//            distance_map().weight_map(edgeProperty::cost));
+
+
+
             return false;
         } else {
 
             // Sample 10k points
-            for (int i = 0; i < 20; i++) {
+            for (int i = 0; i < 10; i++) {
                 addMilestone(sampler.sampleConfiguration());
                 // TODO Validate sample
 
@@ -224,8 +232,6 @@ public:
     }
 
 protected:
-
-
 
 //    /** Thread that checks for solution */
 //    void checkForSolution(const base::PlannerTerminationCondition &ptc, base::PathPtr &solution) {
@@ -331,9 +337,6 @@ protected:
 
         const std::vector<VertexWrapper<Graph> *> &neighbors = near.elements;
 
-        fprintf(stdout, "<%d>", neighbors.size());
-
-
         for (const VertexWrapper<Graph> *neighborWrapper : neighbors) {
 
             auto targetVertex = neighborWrapper->getVertex();
@@ -341,7 +344,7 @@ protected:
             totalConnectionAttemptsProperty[sourceVertex]++;
             totalConnectionAttemptsProperty[targetVertex]++;
 
-            auto edge = agent.steer(sourceState, stateProperty[targetVertex], 1000);
+            auto edge = agent.steer(sourceState, stateProperty[targetVertex], 100000);
 
             // Validate edge
             if (workspace.safeEdge(agent, edge, collisionCheckDT)) {
@@ -353,11 +356,13 @@ protected:
                 successfulConnectionAttemptsProperty[targetVertex]++;
 
                 auto *targetEdge = agentEdgePool.construct(edge.start, edge.end, edge.cost);
-                typename Graph::edge_property_type properties(targetEdge);
+                typename Graph::edge_property_type properties(targetEdge, edge.cost);
 
-                boost::add_edge(targetVertex, sourceVertex, properties, graph);
+                auto edgePair = boost::add_edge(targetVertex, sourceVertex, properties, graph);
                 uniteComponents(targetVertex, sourceVertex);
-            }
+
+                fprintf(stdout, "Edge: %f - %f \n", edge.cost, edgeWeightProperty[edgePair.first]);
+            };
         }
 
 
@@ -420,6 +425,8 @@ protected:
     /** \brief Access to the internal Agent::Edge at each Edge */
     typename boost::property_map<Graph, InternalEdge>::type edgeProperty;
 
+    typename boost::property_map<Graph, boost::edge_weight_t>::type edgeWeightProperty;
+
     /** \brief Data structure that maintains the connected components */
     typename boost::disjoint_sets<typename boost::property_map<Graph, boost::vertex_rank_t>::type,
                                   typename boost::property_map<Graph, boost::vertex_predecessor_t>::type> disjointSets;
@@ -436,7 +443,6 @@ protected:
     Vertex startVertex;
     Vertex goalVertex;
     bool solutionFound;
-
 
     double steeringDT, collisionCheckDT;
 };
