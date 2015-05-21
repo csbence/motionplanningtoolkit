@@ -87,7 +87,8 @@ public:
                                                                                   unsigned long int,
                                                                                   boost::property<boost::vertex_rank_t,
                                                                                                   unsigned long int> > > > >,
-                                  boost::property<InternalEdge, AgentEdge *, boost::property<boost::edge_weight_t, double> > > Graph;
+                                  boost::property<InternalEdge, AgentEdge *,
+                                                  boost::property<boost::edge_weight_t, double> > > Graph;
 
     /** @brief The type for a vertex in the roadmap. */
     typedef typename boost::graph_traits<Graph>::vertex_descriptor Vertex;
@@ -146,7 +147,9 @@ public:
               disjointSets(boost::get(boost::vertex_rank, graph), boost::get(boost::vertex_predecessor, graph)),
               edgeProperty(boost::get(InternalEdge(), graph)),
               edgeWeightProperty(boost::get(boost::edge_weight, graph)),
-              solutionFound(false) {
+              solutionFound(false),
+              solutionCost(-1),
+              poseNumber(-1) {
 
         steeringDT = stod(args.value("Steering Delta t"));
         collisionCheckDT = stod(args.value("Collision Check Delta t"));
@@ -187,13 +190,63 @@ public:
             goalVertex = addMilestone(goal);
         }
 
+        if (solution.size() > 0) {
+            auto red = OpenGLWrapper::Color::Red();
+            for (const AgentEdge *edge : solution) {
+                edge->draw(red);
+            }
+
+            // agent.drawSolution(solution);
+            if (poseNumber >= solution.size() * 2) poseNumber = -1;
+            if (poseNumber >= 0)
+                agent.animateSolution(solution, poseNumber++);
+
+            return false;
+        }
+
         if (solutionFound) {
 //            fprintf(stdout, "Solution found. \n");
 
-//            boost::dijkstra_shortest_paths(graph, goalVertex,
-//            distance_map().weight_map(edgeProperty::cost));
+            boost::vector_property_map<Vertex> predecessorMap(boost::num_vertices(graph));
+            boost::vector_property_map<double> distanceMap(boost::num_vertices(graph));
+
+            boost::dijkstra_shortest_paths(graph, goalVertex,
+                                           boost::predecessor_map(predecessorMap).weight_map(edgeWeightProperty)
+                                                   .distance_map(distanceMap));
+
+            fprintf(stdout, "Dijkstra completed. \n");
 
 
+            // Construct the shorthest path from the start to the goal.
+            Vertex currentVertex = startVertex;
+
+            int counter = 0;
+            solutionCost = 0;
+            solution.clear();
+
+            while (currentVertex != goalVertex) {
+                auto nextVertex = predecessorMap[currentVertex];
+                auto edgePair = boost::edge(currentVertex, nextVertex, graph);
+
+                if (!edgePair.second) {
+                    fprintf(stderr, "Non existent edge is in the solution. \n");
+                    return false;
+                }
+
+                const Edge edge = edgePair.first;
+
+                AgentEdge *agentEdge = edgeProperty[edge];
+                solutionCost += edgeWeightProperty[edge];
+
+                solution.push_back(agentEdge);
+
+                currentVertex = nextVertex;
+
+                counter++;
+            }
+
+
+            fprintf(stdout, "Steps: %d \n", counter);
 
             return false;
         } else {
@@ -344,7 +397,7 @@ protected:
             totalConnectionAttemptsProperty[sourceVertex]++;
             totalConnectionAttemptsProperty[targetVertex]++;
 
-            auto edge = agent.steer(sourceState, stateProperty[targetVertex], 100000);
+            auto edge = agent.steer(sourceState, stateProperty[targetVertex], 1000);
 
             // Validate edge
             if (workspace.safeEdge(agent, edge, collisionCheckDT)) {
@@ -364,7 +417,6 @@ protected:
                 fprintf(stdout, "Edge: %f - %f \n", edge.cost, edgeWeightProperty[edgePair.first]);
             };
         }
-
 
         nn.insertPoint(sourceWrapper);
 
@@ -438,6 +490,11 @@ protected:
     KDTree nn;
     boost::object_pool<AgentEdge> agentEdgePool;
     boost::object_pool<VertexWrapper<Graph>> vertexWrapperPool;
+
+    std::vector<const AgentEdge *> solution;
+    double solutionCost;
+    int poseNumber;
+
 
     std::vector<const Edge *> treeEdges;
     Vertex startVertex;
