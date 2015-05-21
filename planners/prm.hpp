@@ -286,84 +286,6 @@ public:
 
 protected:
 
-//    /** Thread that checks for solution */
-//    void checkForSolution(const base::PlannerTerminationCondition &ptc, base::PathPtr &solution) {
-//        base::GoalSampleableRegion *goal = static_cast<base::GoalSampleableRegion *>(pdef_->getGoal().get());
-//        while (!ptc && !addedNewSolution_) {
-//            // Check for any new goal states
-//            if (goal->maxSampleCount() > goalM_.size()) {
-//                const base::State *st = pis_.nextGoal();
-//                if (st)
-//                    goalM_.push_back(addMilestone(si_->cloneState(st)));
-//            }
-//
-//            // Check for a solution
-//            addedNewSolution_ = maybeConstructSolution(startM_, goalM_, solution);
-//            // Sleep for 1ms
-//            if (!addedNewSolution_)
-//                boost::this_thread::sleep(boost::posix_time::milliseconds(1));
-//        }
-//    }
-
-//    /** \brief Check if there exists a solution, i.e., there exists a pair of milestones such that the first is in \e start and the second is in \e goal, and the two milestones are in the same connected component. If a solution is found, it is constructed in the \e solution argument. */
-//    bool maybeConstructSolution(const std::vector<Vertex> &starts, const std::vector<
-//            Vertex> &goals, base::PathPtr &solution) {
-//        base::Goal *g = pdef_->getGoal().get();
-//        base::Cost sol_cost(opt_->infiniteCost());
-//                for(Vertex
-//                                start : starts) {
-//                                foreach(Vertex
-//                                                goal, goals) {
-//                                        // we lock because the connected components algorithm is incremental and may change disjointSets
-//                                        graphMutex_.lock();
-//                                        bool same_component = sameComponent(start, goal);
-//                                        graphMutex_.unlock();
-//
-//                                        if (same_component &&
-//                                            g->isStartGoalPairValid(stateProperty_[goal], stateProperty_[start])) {
-//                                            base::PathPtr p = constructSolution(start, goal);
-//                                            if (p) {
-//                                                base::Cost pathCost = p->cost(opt_);
-//                                                if (opt_->isCostBetterThan(pathCost, bestCost_))
-//                                                    bestCost_ = pathCost;
-//                                                // Check if optimization objective is satisfied
-//                                                if (opt_->isSatisfied(pathCost)) {
-//                                                    solution = p;
-//                                                    return true;
-//                                                } else if (opt_->isCostBetterThan(pathCost, sol_cost)) {
-//                                                    solution = p;
-//                                                    sol_cost = pathCost;
-//                                                }
-//                                            }
-//                                        }
-//                                    }
-//                    }
-//
-//        return false;
-//    }
-
-//    /** \brief While the termination condition allows, this function will construct the roadmap (using growRoadmap() and expandRoadmap(),
-//    maintaining a 2:1 ratio for growing/expansion of roadmap) */
-//    void constructRoadmap() {
-//        std::vector<base::State *> xstates(magic::MAX_RANDOM_BOUNCE_STEPS);
-//        si_->allocStates(xstates);
-//        bool grow = true;
-//
-//        bestCost_ = opt_->infiniteCost();
-//        while (ptc() == false) {
-//            // maintain a 2:1 ratio for growing/expansion of roadmap
-//            // call growRoadmap() twice as long for every call of expandRoadmap()
-//            if (grow)
-//                growRoadmap(base::plannerOrTerminationCondition(ptc, base::timedPlannerTerminationCondition(
-//                        2.0 * magic::ROADMAP_BUILD_TIME)), xstates[0]);
-//            else
-//                expandRoadmap(base::plannerOrTerminationCondition(ptc, base::timedPlannerTerminationCondition(
-//                        magic::ROADMAP_BUILD_TIME)), xstates);
-//            grow = !grow;
-//        }
-//
-//        si_->freeStates(xstates);
-//    }
 
     /** \brief Construct a milestone for a given state (\e state), store it in the nearest neighbors data structure
     and then connect it to the roadmap in accordance to the connection strategy. */
@@ -432,35 +354,6 @@ protected:
     inline bool sameComponent(Vertex m1, Vertex m2) {
         return boost::same_component(m1, m2, disjointSets);
     }
-
-//    /** \brief Given two milestones from the same connected component, construct a path connecting them and set it as the solution */
-//    ompl::base::PathPtr constructSolution(const Vertex &start, const Vertex &goal) {
-//        boost::mutex::scoped_lock _(graphMutex_);
-//        boost::vector_property_map<Vertex> prev(boost::num_vertices(graph));
-//
-//        try {
-//            // Consider using a persistent distance_map if it's slow
-//            boost::astar_search(graph, start, boost::bind(&PRM::costHeuristic, this, _1, goal),
-//                                boost::predecessor_map(prev).distance_compare(
-//                                                boost::bind(&base::OptimizationObjective::isCostBetterThan, opt_.get(),
-//                                                            _1, _2)).distance_combine(
-//                                                boost::bind(&base::OptimizationObjective::combineCosts, opt_.get(), _1,
-//                                                            _2)).distance_inf(opt_->infiniteCost())
-//                                        .distance_zero(opt_->identityCost()).visitor(AStarGoalVisitor<Vertex>(goal)));
-//        } catch (AStarFoundGoal &) {
-//        }
-//
-//        if (prev[goal] == goal)
-//            throw Exception(name_, "Could not find solution path");
-//
-//        PathGeometric *p = new PathGeometric(si_);
-//        for (Vertex pos = goal; prev[pos] != pos; pos = prev[pos])
-//            p->append(stateProperty_[pos]);
-//        p->append(stateProperty_[start]);
-//        p->reverse();
-//
-//        return base::PathPtr(p);
-//    }
 
     /** \brief Connectivity graph */
     Graph graph;
