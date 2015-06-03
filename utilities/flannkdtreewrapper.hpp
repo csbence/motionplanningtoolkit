@@ -66,7 +66,7 @@ public:
 		std::vector< std::vector<int> > indices;
 		std::vector< std::vector<double> > distances;
 
-		flann::SearchParams params(flann::FLANN_CHECKS_UNLIMITED, epsilon, false);
+		flann::SearchParams params(32, epsilon, false);
 
 		kdtree.knnSearch(point, indices, distances, k, params);
 

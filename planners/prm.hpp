@@ -20,6 +20,8 @@
 #include <map>
 
 #include "../utilities/flannkdtreewrapper.hpp"
+#include <cassert>
+
 
 /**
    @anchor gPRM
@@ -63,6 +65,11 @@ public:
         typedef boost::vertex_property_tag kind;
     };
 
+    struct GoalDistance {
+        typedef boost::vertex_property_tag kind;
+    };
+
+
     /**
      @brief The underlying roadmap graph.
 
@@ -86,7 +93,10 @@ public:
                                                                                   boost::vertex_predecessor_t,
                                                                                   unsigned long int,
                                                                                   boost::property<boost::vertex_rank_t,
-                                                                                                  unsigned long int> > > > >,
+                                                                                                  unsigned long int,
+                                                                                                  boost::property<
+                                                                                                          GoalDistance,
+                                                                                                          double>>> > > >,
                                   boost::property<InternalEdge, AgentEdge *,
                                                   boost::property<boost::edge_weight_t, double> > > Graph;
 
@@ -100,24 +110,24 @@ public:
     class VertexWrapper {
     public:
         VertexWrapper(Vertex vertex, Graph &graph) : vertex(vertex),
-                                                     graph(graph) {
+                                                     internalState(boost::get(InternalState(), graph, vertex)) {
         }
 
-        AgentState foo() {
-            return AgentState();
-        };
+        VertexWrapper(AgentState state) : internalState(state) {
+        }
 
         /* needed for being inserted into NN datastructure */
         const typename Agent::StateVars &getStateVars() const {
-            return boost::get(InternalState(), graph, vertex).getStateVars();
+            return internalState.getStateVars();
         }
 
         int getPointIndex() const {
-            return boost::get(InternalState(), graph, vertex).getPointIndex();
+            return internalState.getPointIndex();
+
         }
 
         void setPointIndex(int value) {
-            boost::get(InternalState(), graph, vertex).setPointIndex(value);
+            internalState.setPointIndex(value);
         }
 
         Vertex getVertex() const {
@@ -125,12 +135,11 @@ public:
         }
 
     private:
-//        static typename boost::property_map<Graph, InternalState>::type &stateProperty;
-        const Vertex vertex;
-        Graph &graph;
+        AgentState internalState; // TODO WARNING &?
+        Vertex vertex;
     };
 
-    typedef flann::KDTreeSingleIndexParams KDTreeType;
+    typedef flann::KDTreeIndexParams KDTreeType;
 
     typedef FLANN_KDTreeWrapper<KDTreeType, flann::L2<double>, VertexWrapper<Graph>> KDTree;
 
@@ -140,7 +149,7 @@ public:
             : workspace(workspace),
               agent(agent),
               sampler(sampler),
-              nn(KDTree(KDTreeType(), 3)),
+              nn(KDTree(KDTreeType(), 3, 0)),
               stateProperty(boost::get(InternalState(), graph)),
               totalConnectionAttemptsProperty(boost::get(VertexTotalConnectionAttempts(), graph)),
               successfulConnectionAttemptsProperty(boost::get(VertexSuccessfulConnectionAttempts(), graph)),
@@ -148,36 +157,43 @@ public:
               edgeProperty(boost::get(InternalEdge(), graph)),
               edgeWeightProperty(boost::get(boost::edge_weight, graph)),
               solutionFound(false),
+              prmBuilt(false),
               solutionCost(-1),
               poseNumber(-1) {
 
         steeringDT = stod(args.value("Steering Delta t"));
         collisionCheckDT = stod(args.value("Collision Check Delta t"));
-
     }
 
     ~PRM() {
         graph.clear();
     }
 
+
+    // --- Discretization interface --- //
+
+    const Vertex getContainingRegion(AgentState state) {
+        std::unique_ptr<VertexWrapper<Graph>> stateWrapper(new VertexWrapper<Graph>(state));
+
+        auto result = nn.nearest(stateWrapper.get());
+
+        return result.elements[0]->getVertex();
+    }
+
+    const double getRegionCost(Vertex vertex) const {
+        return get(GoalDistance(), graph, vertex);
+    }
+    // -------------------------------- //
+
     bool query(const AgentState &start, const AgentState &goal, int iterationsAtATime = -1, bool firstInvocation = true) {
 
-
 #ifdef WITHGRAPHICS
-        // Draw start end goal states
-        start.draw();
-        goal.draw();
-
-        for (auto vertex : boost::make_iterator_range(boost::vertices(graph))) {
-            const AgentState agentState = stateProperty(vertex);
-            agentState.draw();
-        }
-
-        for (auto edge : boost::make_iterator_range(boost::edges(graph))) {
-            const AgentEdge *const agentEdge = edgeProperty(edge);
-            agentEdge->draw();
-        }
+        drawCurrentState(start, goal);
 #endif
+
+        if (solutionFound) {
+            return true;
+        }
 
         if (firstInvocation && agent.isGoal(start, goal)) {
             return true;
@@ -185,53 +201,63 @@ public:
 
         std::chrono::steady_clock::time_point startTime = std::chrono::steady_clock::now();
 
+        // Create nodes for the start and goal states
         if (firstInvocation) {
             startVertex = addMilestone(start);
             goalVertex = addMilestone(goal);
         }
 
-        if (solution.size() > 0) {
-            auto red = OpenGLWrapper::Color::Red();
-            for (const AgentEdge *edge : solution) {
-                edge->draw(red);
+        if (prmBuilt) {
+            constructSolution();
+            solutionFound = true;
+
+            return true;
+        } else {
+            // Build prm
+
+            // Sample 10k points
+            for (int i = 0; i < 100; i++) {
+                addMilestone(sampler.sampleConfiguration());
             }
 
-            // agent.drawSolution(solution);
-            if (poseNumber >= solution.size() * 2) poseNumber = -1;
-            if (poseNumber >= 0)
-                agent.animateSolution(solution, poseNumber++);
-
-            return false;
+            prmBuilt = sameComponent(startVertex, goalVertex);
         }
 
-        if (solutionFound) {
-//            fprintf(stdout, "Solution found. \n");
+        std::chrono::steady_clock::time_point endTime = std::chrono::steady_clock::now();
+        Millisecond duration(std::chrono::duration_cast<Millisecond>(endTime - startTime));
+        fprintf(stdout, "PRM solved[%s] in %d[ms]\n", solutionFound ? "true" : "false", duration.count());
 
-            boost::vector_property_map<Vertex> predecessorMap(boost::num_vertices(graph));
-            boost::vector_property_map<double> distanceMap(boost::num_vertices(graph));
+        return false;
+    }
 
-            boost::dijkstra_shortest_paths(graph, goalVertex,
+    bool constructSolution() {
+        std::chrono::steady_clock::time_point startTime = std::chrono::steady_clock::now();
+
+        auto predecessorMap = get(boost::vertex_predecessor, graph);
+        auto distanceMap = get(GoalDistance(), graph);
+
+        dijkstra_shortest_paths(graph, goalVertex,
                                            boost::predecessor_map(predecessorMap).weight_map(edgeWeightProperty)
                                                    .distance_map(distanceMap));
 
-            fprintf(stdout, "Dijkstra completed. \n");
+        std::chrono::steady_clock::time_point endTime = std::chrono::steady_clock::now();
+        Millisecond duration(std::chrono::duration_cast<Millisecond>(endTime - startTime));
+        fprintf(stdout, "Dijkstra completed in %d[ms]\n", duration.count());
 
+        startTime = std::chrono::steady_clock::now();
 
-            // Construct the shorthest path from the start to the goal.
-            Vertex currentVertex = startVertex;
+        // Construct the shorthest path from the start to the goal.
+        Vertex currentVertex = startVertex;
 
-            int counter = 0;
-            solutionCost = 0;
-            solution.clear();
+        int counter = 0;
+        solutionCost = 0;
+        solution.clear();
 
-            while (currentVertex != goalVertex) {
+        while (currentVertex != goalVertex) {
                 auto nextVertex = predecessorMap[currentVertex];
-                auto edgePair = boost::edge(currentVertex, nextVertex, graph);
+                auto edgePair = edge(currentVertex, nextVertex, graph);
 
-                if (!edgePair.second) {
-                    fprintf(stderr, "Non existent edge is in the solution. \n");
-                    return false;
-                }
+                assert(edgePair.second);
 
                 const Edge edge = edgePair.first;
 
@@ -245,29 +271,41 @@ public:
                 counter++;
             }
 
+        endTime = std::chrono::steady_clock::now();
+        duration = std::chrono::duration_cast<Millisecond>(endTime - startTime);
 
-            fprintf(stdout, "Steps: %d \n", counter);
-
-            return false;
-        } else {
-
-            // Sample 10k points
-            for (int i = 0; i < 10; i++) {
-                addMilestone(sampler.sampleConfiguration());
-                // TODO Validate sample
-
-            }
-
-            solutionFound = sameComponent(startVertex, goalVertex);
-        }
-
-        std::chrono::steady_clock::time_point endTime = std::chrono::steady_clock::now();
-
-        Millisecond duration(std::chrono::duration_cast<Millisecond>(endTime - startTime));
-
-        fprintf(stdout, "PRM solved[%s] in %d[ms]\n", solutionFound ? "true" : "false", duration.count());
+        fprintf(stdout, "Solution constructed in %d[ms]. Solution lenght: [%d] \n", duration.count(), counter);
 
         return false;
+    }
+
+    inline void drawCurrentState(const AgentState &start, const AgentState &goal) {
+        // Draw start end goal states
+        start.draw();
+        goal.draw();
+
+        for (auto vertex : boost::make_iterator_range(boost::vertices(graph))) {
+            const AgentState agentState = stateProperty(vertex);
+            agentState.draw();
+        }
+
+        for (auto edge : boost::make_iterator_range(boost::edges(graph))) {
+            const AgentEdge *const agentEdge = edgeProperty(edge);
+            agentEdge->draw();
+        }
+
+        if (solution.size() > 0) {
+            auto red = OpenGLWrapper::Color::Red();
+            for (const AgentEdge *edge : solution) {
+                edge->draw(red);
+            }
+
+//            // agent.drawSolution(solution);
+//            if (poseNumber >= solution.size() * 2) poseNumber = -1;
+//            if (poseNumber >= 0)
+//                agent.animateSolution(solution, poseNumber++);
+
+        }
     }
 
     const Graph &getRoadmap() const {
@@ -285,7 +323,6 @@ public:
     }
 
 protected:
-
 
     /** \brief Construct a milestone for a given state (\e state), store it in the nearest neighbors data structure
     and then connect it to the roadmap in accordance to the connection strategy. */
@@ -308,7 +345,7 @@ protected:
         // Which milestones will we attempt to connect to?
         typename KDTree::KNNResult near = nn.kNearest(sourceWrapper, 10);
 
-        sourceState.draw();
+//        sourceState.draw();
 
         const std::vector<VertexWrapper<Graph> *> &neighbors = near.elements;
 
@@ -324,7 +361,7 @@ protected:
             // Validate edge
             if (workspace.safeEdge(agent, edge, collisionCheckDT)) {
 
-                edge.draw();
+//                edge.draw();
 
                 // Increment the successful connection attempts on both ends
                 successfulConnectionAttemptsProperty[sourceVertex]++;
@@ -336,7 +373,7 @@ protected:
                 auto edgePair = boost::add_edge(targetVertex, sourceVertex, properties, graph);
                 uniteComponents(targetVertex, sourceVertex);
 
-                fprintf(stdout, "Edge: %f - %f \n", edge.cost, edgeWeightProperty[edgePair.first]);
+//                fprintf(stdout, "Edge: %f - %f \n", edge.cost, edgeWeightProperty[edgePair.first]);
             };
         }
 
@@ -393,6 +430,7 @@ protected:
     Vertex startVertex;
     Vertex goalVertex;
     bool solutionFound;
+    bool prmBuilt;
 
     double steeringDT, collisionCheckDT;
 };

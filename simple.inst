@@ -7,7 +7,7 @@ Goal Thresholds ? 1 1 1
 Environment Model ? Map3D
 Environment Mesh ? /Users/bencecserna/Documents/Development/projects/motionplanningtoolkit/motionplanningtoolkit/mesh_models/environment_models/unit_box.dae
 Environment Location ? 0 0 0 1 0 0 0
-Environment Bounding Box ? -10 10 -10 10 0 5
+Environment Bounding Box ? -10 10 -10 10 -10 10
 
 Steering Delta t ? 0.1
 Collision Check Delta t ? 0.1
