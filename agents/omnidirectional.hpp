@@ -159,9 +159,9 @@ public:
 		double startY = start.y();
 		double startZ = start.z();
 
-		double randX = (double)rand() / (double)RAND_MAX;
-		double randY = (double)rand() / (double)RAND_MAX;
-		double randZ = (double)rand() / (double)RAND_MAX;
+		double randX = ((double)rand() - ((double)RAND_MAX / 2)) / ((double)RAND_MAX / 2);
+		double randY = ((double)rand() - ((double)RAND_MAX / 2)) / ((double)RAND_MAX / 2);
+		double randZ = ((double)rand() - ((double)RAND_MAX / 2)) / ((double)RAND_MAX / 2);
 
 		double dist = sqrt(randX*randX + randY*randY + randZ*randZ);
 
