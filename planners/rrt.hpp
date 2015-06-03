@@ -18,7 +18,6 @@ public:
 
 
 	void query(const State &start, const State &goal, int iterationsAtATime = -1, bool firstInvocation = true) {
-
 #ifdef WITHGRAPHICS
 		auto green = OpenGLWrapper::Color::Green();
 		start.draw(green);
@@ -26,23 +25,23 @@ public:
 #endif
 
 		if(agent.isGoal(start, goal)) {
+			fprintf(stderr, "found goal\n");
 			return;
 		}
 
 		if(firstInvocation) {
 			auto root = pool.construct(start);
-
-
 			nn.insertPoint(root);
 		}
 
 		unsigned int iterations = 0;
 
 		while(true && poseNumber == -1) {
+
 			auto sample = sampler.sampleConfiguration();
 
 #ifdef WITHGRAPHICS
-			//samples.push_back(sample);
+			samples.push_back(sample);
 #endif
 
 			//intentionally not in the pool
@@ -57,10 +56,14 @@ public:
 
 			if(!workspace.safeEdge(agent, edge, collisionCheckDT)) {
 				++iterations;
+				
+				if(iterationsAtATime > 0 && ++iterations > iterationsAtATime) break;
+
 				continue;
 			}
 
 			if(agent.isGoal(edge.end, goal)) {
+				fprintf(stderr, "found goal\n");
 				std::vector<const Edge*> newSolution;
 				double newSolutionCost = 0;
 				State cur = edge.start;
@@ -87,7 +90,7 @@ public:
 			nn.insertPoint(e);
 
 #ifdef WITHGRAPHICS
-			// treeEdges.push_back(e);
+			treeEdges.push_back(e);
 #endif
 
 			if(iterationsAtATime > 0 && ++iterations > iterationsAtATime) break;
@@ -113,9 +116,19 @@ public:
 			if(poseNumber >= 0)
 				agent.animateSolution(solution, poseNumber++);
 		}
-
-
 #endif
+
+#ifdef VREPPLUGIN
+	if(solution.size() > 0) {
+		if(agent.validateSolution(solution, goal)) {
+			fprintf(stderr, "VALID SOLUTION!\n");
+		} else {
+			fprintf(stderr, "INVALID SOLUTION!\n");
+		}
+		agent.animateSolution(solution);
+	}
+#endif
+
 	}
 private:
 	const Workspace &workspace;
