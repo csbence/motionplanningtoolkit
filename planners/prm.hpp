@@ -3,7 +3,6 @@
 #include <flann/flann.hpp>
 #include <boost/pool/object_pool.hpp>
 #include <boost/lambda/bind.hpp>
-#include <boost/graph/astar_search.hpp>
 #include <boost/graph/dijkstra_shortest_paths.hpp>
 #include <boost/graph/incremental_components.hpp>
 #include <boost/property_map/vector_property_map.hpp>
@@ -13,7 +12,6 @@
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/pending/disjoint_sets.hpp>
 #include <boost/function.hpp>
-#include <boost/thread.hpp>
 #include <chrono>
 #include <utility>
 #include <vector>
@@ -113,11 +111,16 @@ public:
                                                      internalState(boost::get(InternalState(), graph, vertex)) {
         }
 
-        VertexWrapper(AgentState state) : internalState(state) {
+        VertexWrapper(AgentState &state) : internalState(state) {
         }
 
         /* needed for being inserted into NN datastructure */
         const typename Agent::StateVars &getStateVars() const {
+            return internalState.getStateVars();
+        }
+
+        /* needed for being inserted into NN datastructure */
+        const typename Agent::StateVars &getTreeStateVars() const {
             return internalState.getStateVars();
         }
 
@@ -135,7 +138,7 @@ public:
         }
 
     private:
-        AgentState internalState; // TODO WARNING &?
+        AgentState &internalState; // TODO WARNING &?
         Vertex vertex;
     };
 
@@ -236,9 +239,8 @@ public:
         auto predecessorMap = get(boost::vertex_predecessor, graph);
         auto distanceMap = get(GoalDistance(), graph);
 
-        dijkstra_shortest_paths(graph, goalVertex,
-                                           boost::predecessor_map(predecessorMap).weight_map(edgeWeightProperty)
-                                                   .distance_map(distanceMap));
+        dijkstra_shortest_paths(graph, goalVertex, boost::predecessor_map(predecessorMap).weight_map(edgeWeightProperty)
+                                        .distance_map(distanceMap));
 
         std::chrono::steady_clock::time_point endTime = std::chrono::steady_clock::now();
         Millisecond duration(std::chrono::duration_cast<Millisecond>(endTime - startTime));
@@ -254,22 +256,22 @@ public:
         solution.clear();
 
         while (currentVertex != goalVertex) {
-                auto nextVertex = predecessorMap[currentVertex];
-                auto edgePair = edge(currentVertex, nextVertex, graph);
+            auto nextVertex = predecessorMap[currentVertex];
+            auto edgePair = edge(currentVertex, nextVertex, graph);
 
-                assert(edgePair.second);
+            assert(edgePair.second);
 
-                const Edge edge = edgePair.first;
+            const Edge edge = edgePair.first;
 
-                AgentEdge *agentEdge = edgeProperty[edge];
-                solutionCost += edgeWeightProperty[edge];
+            AgentEdge *agentEdge = edgeProperty[edge];
+            solutionCost += edgeWeightProperty[edge];
 
-                solution.push_back(agentEdge);
+            solution.push_back(agentEdge);
 
-                currentVertex = nextVertex;
+            currentVertex = nextVertex;
 
-                counter++;
-            }
+            counter++;
+        }
 
         endTime = std::chrono::steady_clock::now();
         duration = std::chrono::duration_cast<Millisecond>(endTime - startTime);

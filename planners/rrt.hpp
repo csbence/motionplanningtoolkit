@@ -2,6 +2,7 @@
 
 #include <flann/flann.hpp>
 #include <boost/pool/object_pool.hpp>
+#include "../utilities/Clock.hpp"
 
 template<class Workspace, class Agent, class Sampler, class NN>
 class RRT {
@@ -36,6 +37,8 @@ public:
 
 		unsigned int iterations = 0;
 
+		clock.start();
+
 		while(true && poseNumber == -1) {
 
 			auto sample = sampler.sampleConfiguration();
@@ -63,6 +66,10 @@ public:
 			}
 
 			if(agent.isGoal(edge.end, goal)) {
+				clock.stop();
+				fprintf(stdout, "RRT solved in %d[ms]\n", clock.getDurationInMillis());
+
+
 				fprintf(stderr, "found goal\n");
 				std::vector<const Edge*> newSolution;
 				double newSolutionCost = 0;
@@ -89,16 +96,15 @@ public:
 			Edge *e = pool.construct(edge);
 			nn.insertPoint(e);
 
+
 #ifdef WITHGRAPHICS
-<<<<<<< HEAD
 			 treeEdges.push_back(e);
-=======
-			treeEdges.push_back(e);
->>>>>>> master
 #endif
 
 			if(iterationsAtATime > 0 && ++iterations > iterationsAtATime) break;
 		}
+
+		clock.stop();
 
 #ifdef WITHGRAPHICS
 		for(const Edge* edge : treeEdges) {
@@ -146,4 +152,5 @@ private:
 	double solutionCost;
 	double steeringDT, collisionCheckDT;
 	int poseNumber;
+	Clock clock;
 };

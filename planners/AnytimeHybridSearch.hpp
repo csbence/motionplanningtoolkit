@@ -2,10 +2,13 @@
 #define MOTIONPLANNING_ANYTIMEHYBRIDSEARCH_HPP
 
 #include "../utilities/ProbabilisticSampler.hpp"
+#include "../utilities/Clock.hpp"
 #include "prm.hpp"
 #include <boost/random/uniform_real.hpp>
 #include <boost/random/normal_distribution.hpp>
 #include <boost/random/variate_generator.hpp>
+#include <boost/graph/graph_traits.hpp>
+#include <boost/graph/adjacency_list.hpp>
 #include <random>
 #include <iostream>
 #include <map>
@@ -74,12 +77,8 @@ public:
                                                      graph(graph) {
         }
 
-        AgentState foo() {
-            return AgentState();
-        };
-
         /* needed for being inserted into NN datastructure */
-        const typename Agent::StateVars &getStateVars() const {
+        const typename Agent::StateVars &getTreeStateVars() const {
             return boost::get(InternalState(), graph, vertex).getStateVars();
         }
 
@@ -123,10 +122,58 @@ public:
               openRegions(),
               openRegionSet(),
               treeGroupMap(),
-              distribution(0, 1) {
+              distribution(0, 1),
+              clock() {
 
         steeringDT = stod(args.value("Steering Delta t"));
         collisionCheckDT = stod(args.value("Collision Check Delta t"));
+    }
+
+    void expandMotionTree(const AgentState &goal) {
+        for (int i = 0; i < 100; i++) {
+            // Sample source region
+            Region region = openRegions.sample(distribution(generator));
+
+            // Get the vertexes in the sampled region
+            std::__1::vector<Vertex> verticesInRegion = treeGroupMap.find(region)->second;
+
+            // Select a random state in the region
+            std::__1::uniform_int_distribution<> intDistribution(0, verticesInRegion.size() - 1);
+            Vertex &sourceVertex = verticesInRegion[intDistribution(generator)];
+
+            auto edge = agent.randomSteer(stateProperty[sourceVertex], steeringDT);
+
+            if (!workspace.safeEdge(agent, edge, collisionCheckDT)) {
+                continue;
+            }
+
+            if (agent.isGoal(edge.end, goal)) {
+                fprintf(stdout, "AHS solution found!");
+                solutionFound = true;
+                break;
+            }
+
+            // Expand tree
+            AgentEdge *targetEdge = agentEdgePool.construct(edge);
+            AgentState targetState = edge.end;
+            Vertex targetVertex = addState(targetState);
+
+            // Add new edge to the tree
+            typename Graph::edge_property_type properties(targetEdge, edge.cost);
+            auto edgePair = add_edge(targetVertex, sourceVertex, properties, graph);
+
+            const Region targetRegion = prm.getContainingRegion(targetState);
+            const double cost = prm.getRegionCost(targetRegion);
+
+            if (openRegionSet.find(targetRegion) == openRegionSet.end()) {
+                // Region not found
+
+                openRegionSet.insert(targetRegion);
+                openRegions.add(targetRegion, 1.0 / cost);
+            }
+
+            assignVertexToRegion(targetRegion, targetVertex);
+        }
     }
 
     bool query(const AgentState &start, const AgentState &goal, int iterationsAtATime = -1, bool firstInvocation = true) {
@@ -149,8 +196,10 @@ public:
             return false;
         }
 
+        clock.start();
+
+        // Initialize tree
         if (openRegions.empty()) {
-            roadmapGraph = prm.getRoadmap();
 
             // Add start to the tree and the corresponding group to the open group list
             const Region startRegion = prm.getContainingRegion(start);
@@ -161,53 +210,15 @@ public:
             assignVertexToRegion(startRegion, startVertex);
         }
 
-        for (int i = 0; i < 100; i++) {
-            // Sample state
-            Region region = openRegions.sample(distribution(generator));
-            // Get the vertexes in the sampled region
-            std::vector<Vertex> verticesInRegion = treeGroupMap.find(region)->second;
+        expandMotionTree(goal);
 
-            // Select a random state in the region
-            std::uniform_int_distribution<> intDistribution(0, verticesInRegion.size() - 1);
-            Vertex &sourceVertex = verticesInRegion[intDistribution(generator)];
+        clock.stop();
 
-            auto edge = agent.randomSteer(stateProperty[sourceVertex], steeringDT);
-
-            if (!workspace.safeEdge(agent, edge, collisionCheckDT)) {
-                continue;
-            }
-
-            if (agent.isGoal(edge.end, goal)) {
-                fprintf(stdout, "AHS solution found!");
-                solutionFound = true;
-                return true;
-            }
-
-            // Expand tree
-            AgentEdge *targetEdge = agentEdgePool.construct(edge);
-            AgentState targetState = edge.end;
-            Vertex targetVertex = addState(targetState);
-
-            // Add new edge to the tree
-            typename Graph::edge_property_type properties(targetEdge, edge.cost);
-            auto edgePair = boost::add_edge(targetVertex, sourceVertex, properties, graph);
-
-            const Region targetRegion = prm.getContainingRegion(targetState);
-            const double cost = prm.getRegionCost(targetRegion);
-
-            if (openRegionSet.find(targetRegion) == openRegionSet.end()) {
-                // Region not found
-
-                openRegionSet.insert(targetRegion);
-                openRegions.add(targetRegion, 1.0 / cost);
-            }
-
-            assignVertexToRegion(targetRegion, targetVertex);
+        if (solutionFound) {
+            fprintf(stdout, "Guided RRT solved in %d[ms]\n", clock.getDurationInMillis());
         }
 
-//         fprintf(stdout, "Cost: %f\n OpenRegions: %lu", cost, openRegionSet.size());
-
-        return false;
+        return solutionFound;
     }
 
     void drawCurrentState() {
@@ -274,15 +285,29 @@ private:
 
     double steeringDT, collisionCheckDT;
 
+    /**
+     * Probabilistic roadmap.
+     * Used as a heuristic to guide the sampling.
+     */
     Prm prm;
+
+    /**
+     * Probability distribution of the open regions.
+     */
     PDF<Region> openRegions;
+
+    /**
+     * Set of open regions for fast region lookup.
+     * The probability distribution does not support this feature.
+     */
     std::set<Region> openRegionSet;
 
-    typename Prm::Graph roadmapGraph;
     TreeGroupMap<Region, Vertex> treeGroupMap;
 
     std::uniform_real_distribution<> distribution;
     std::default_random_engine generator;
+
+    Clock clock;
 
 };
 

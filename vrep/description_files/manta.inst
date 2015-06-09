@@ -1,6 +1,6 @@
 #/Users/skiesel/Desktop/motionplanningtoolkit/vrep/description_files/manta.inst
 
-Scene File ? /Users/skiesel/Desktop/motionplanningtoolkit/vrep/scenes/manta.ttt
+Scene File ? /Users/bencecserna/Documents/Development/projects/motionplanningtoolkit/motionplanningtoolkit/vrep/scenes/manta.ttt
 
 Agent Handle Name ? Manta
 Agent Collision Group Handle Name ? STL_Imported19
