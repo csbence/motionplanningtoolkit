@@ -11,6 +11,7 @@
 
 #include "planners/rrt.hpp"
 #include "planners/AnytimeHybridSearch.hpp"
+#include "planners/kpiece.hpp"
 
 #include "samplers/uniformsampler.hpp"
 #include "samplers/normalsampler.hpp"
