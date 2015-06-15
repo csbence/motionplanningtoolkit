@@ -12,7 +12,13 @@ Motion Planning Toolkit has the following required dependencies:
 
 * [Flexible Collision Library (FCL)](https://github.com/flexible-collision-library/fcl) (version 0.3.2)
 
+<<<<<<< HEAD
 * [Boost](http://www.boost.org/) (version 1.57.0)
+=======
+https://github.com/ompl/ompl
+
+##### Also using a modified version of:
+>>>>>>> skiesel/master
 
 * [Open Asset Import Library (ASSIMP)](https://github.com/assimp/assimp) (version 3.0.+)
 

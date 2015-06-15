@@ -6,6 +6,7 @@
 #include "../utilities/instancefilemap.hpp"
 #include "vrepinterface.hpp"
 #include "../planners/rrt.hpp"
+#include "../planners/kpiece.hpp"
 #include "../samplers/uniformsampler.hpp"
 #include "../utilities/flannkdtreewrapper.hpp"
 #include "../planners/AnytimeHybridSearch.hpp"
@@ -83,6 +84,7 @@ VREP_DLLEXPORT unsigned char v_repStart(void* reservedPointer,int reservedInt) {
 							flann::L2<double>,
 							VREPInterface::Edge> kdtree(kdtreeType, interface->getTreeStateSize());
 
+<<<<<<< HEAD
 //		RRT<VREPInterface,
 //			VREPInterface,
 //			UniformSampler<VREPInterface, VREPInterface>,
@@ -93,6 +95,14 @@ VREP_DLLEXPORT unsigned char v_repStart(void* reservedPointer,int reservedInt) {
 			UniformSampler<VREPInterface, VREPInterface>,
 			> planner(*interface, *interface, sampler, kdtree, *args);
 
+=======
+		// RRT<VREPInterface,
+		// 	VREPInterface,
+		// 	UniformSampler<VREPInterface, VREPInterface>,
+		// 	FLANN_KDTreeWrapper<flann::KDTreeSingleIndexParams, flann::L2<double>, VREPInterface::Edge> > planner(*interface, *interface, sampler, kdtree, *args);
+
+		KPIECE<VREPInterface, VREPInterface> planner(*interface, *interface, *args);
+>>>>>>> skiesel/master
 
 		planner.query(start, goal);
 	});
