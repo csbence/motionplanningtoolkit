@@ -17,9 +17,9 @@
 #include <vector>
 #include <map>
 
-#include "../utilities/flannkdtreewrapper.hpp"
+#include "../../utilities/flannkdtreewrapper.hpp"
+#include "Transformations.hpp"
 #include <cassert>
-
 
 /**
    @anchor gPRM

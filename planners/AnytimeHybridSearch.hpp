@@ -3,7 +3,7 @@
 
 #include "../utilities/ProbabilisticSampler.hpp"
 #include "../utilities/Timer.hpp"
-#include "prm.hpp"
+#include "prm/prm.hpp"
 #include <boost/random/uniform_real.hpp>
 #include <boost/random/normal_distribution.hpp>
 #include <boost/random/variate_generator.hpp>
@@ -13,7 +13,6 @@
 #include <iostream>
 #include <map>
 #include <set>
-
 
 template<class Workspace, class Agent, class Sampler>
 class AnytimeHybridSearch {
@@ -197,8 +196,6 @@ public:
         if (!prm.query(start, goal, iterationsAtATime, firstInvocation)) {
             return false;
         }
-
-        return true;
 
         timer.start();
 
