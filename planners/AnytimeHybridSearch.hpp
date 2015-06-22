@@ -2,7 +2,7 @@
 #define MOTIONPLANNING_ANYTIMEHYBRIDSEARCH_HPP
 
 #include "../utilities/ProbabilisticSampler.hpp"
-#include "../utilities/Clock.hpp"
+#include "../utilities/Timer.hpp"
 #include "prm.hpp"
 #include <boost/random/uniform_real.hpp>
 #include <boost/random/normal_distribution.hpp>
@@ -123,7 +123,7 @@ public:
               openRegionSet(),
               treeGroupMap(),
               distribution(0, 1),
-              clock() {
+              timer() {
 
         steeringDT = stod(args.value("Steering Delta t"));
         collisionCheckDT = stod(args.value("Collision Check Delta t"));
@@ -178,6 +178,8 @@ public:
 
     bool query(const AgentState &start, const AgentState &goal, int iterationsAtATime = -1, bool firstInvocation = true) {
 
+        fprintf(stdout, "AnytimeHybridSearch called!");
+
 #ifdef WITHGRAPHICS
         drawCurrentState();
 #endif
@@ -196,7 +198,9 @@ public:
             return false;
         }
 
-        clock.start();
+        return true;
+
+        timer.start();
 
         // Initialize tree
         if (openRegions.empty()) {
@@ -212,10 +216,10 @@ public:
 
         expandMotionTree(goal);
 
-        clock.stop();
+        timer.stop();
 
         if (solutionFound) {
-            fprintf(stdout, "Guided RRT solved in %d[ms]\n", clock.getDurationInMillis());
+            fprintf(stdout, "Guided RRT solved in %d[ms]\n", timer.getDurationInMillis());
         }
 
         return solutionFound;
@@ -307,7 +311,7 @@ private:
     std::uniform_real_distribution<> distribution;
     std::default_random_engine generator;
 
-    Clock clock;
+    Timer timer;
 
 };
 

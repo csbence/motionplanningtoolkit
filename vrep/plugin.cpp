@@ -19,6 +19,35 @@ LIBRARY vrepLib;
 VREPInterface *interface;
 InstanceFileMap *args;
 simFloat start = -1, dt = 1;
+VREPInterface::State startState;
+
+namespace {
+	const char *const pluginName = "skiesel";
+
+	VREPInterface::State getConfiguration(const char *objectName) {
+		VREPInterface::State goal;
+		const simInt goalHandle = simGetObjectHandle(objectName);
+		simFloat vals[3];
+		simGetObjectPosition(goalHandle, -1, vals);
+		for (unsigned int i = 0; i < 3; ++i) {
+			goal.goalPositionVars.push_back(vals[i]);
+			goal.stateVars.push_back(vals[i]);
+		}
+
+		simGetObjectOrientation(goalHandle, -1, vals);
+		for (unsigned int i = 0; i < 3; ++i) {
+			goal.goalOrientationVars.push_back(vals[i]);
+			goal.stateVars.push_back(vals[i]);
+		}
+
+		// TODO Remove! This is for testing
+		for (unsigned int i = 0; i < 6; ++i) {
+			goal.stateVars.push_back(0);
+		}
+
+		return goal;
+	}
+}
 
 VREP_DLLEXPORT unsigned char v_repStart(void* reservedPointer,int reservedInt) {
 	char curDirAndFile[1024];
@@ -60,52 +89,52 @@ VREP_DLLEXPORT unsigned char v_repStart(void* reservedPointer,int reservedInt) {
 
 	simStartSimulation();
 
-	boost::thread workerThread([&](){
+//	boost::thread workerThread([&](){
 		VREPInterface::State start;
 		interface->makeStartState(start);
 
-		simInt goalHandle = simGetObjectHandle("Goal");
-		VREPInterface::State goal;
-		
-		simFloat vals[3];
-		simGetObjectPosition(goalHandle, -1, vals);
-		for(unsigned int i = 0; i < 3; ++i)
-			goal.goalPositionVars.push_back(vals[i]);
+		VREPInterface::State goal = getConfiguration("Goal");
 
-		simGetObjectOrientation(goalHandle, -1, vals);
-		for(unsigned int i = 0; i < 3; ++i)
-			goal.goalOrientationVars.push_back(vals[i]);
-
-		UniformSampler<VREPInterface, VREPInterface> sampler(*interface, *interface);
+		typedef UniformSampler<VREPInterface, VREPInterface> Sampler;
+		Sampler sampler(*interface, *interface);
 
 		flann::KDTreeSingleIndexParams kdtreeType;
-		
+
 		FLANN_KDTreeWrapper<flann::KDTreeSingleIndexParams,
 							flann::L2<double>,
 							VREPInterface::Edge> kdtree(kdtreeType, interface->getTreeStateSize());
 
-<<<<<<< HEAD
-//		RRT<VREPInterface,
-//			VREPInterface,
-//			UniformSampler<VREPInterface, VREPInterface>,
-//			FLANN_KDTreeWrapper<flann::KDTreeSingleIndexParams, flann::L2<double>, VREPInterface::Edge> > planner(*interface, *interface, sampler, kdtree, *args);
+		typedef AnytimeHybridSearch<VREPInterface, VREPInterface, Sampler> hybridPlanner;
 
-		AnytimeHybridSearch<VREPInterface,
+//		hybridPlanner planner(*interface, *interface, sampler, *args);
+
+		RRT<VREPInterface,
 			VREPInterface,
-			UniformSampler<VREPInterface, VREPInterface>,
-			> planner(*interface, *interface, sampler, kdtree, *args);
+			Sampler,
+			FLANN_KDTreeWrapper<flann::KDTreeSingleIndexParams, flann::L2<double>, VREPInterface::Edge> > planner(*interface, *interface, sampler, kdtree, *args);
 
-=======
-		// RRT<VREPInterface,
-		// 	VREPInterface,
-		// 	UniformSampler<VREPInterface, VREPInterface>,
-		// 	FLANN_KDTreeWrapper<flann::KDTreeSingleIndexParams, flann::L2<double>, VREPInterface::Edge> > planner(*interface, *interface, sampler, kdtree, *args);
+//		KPIECE<VREPInterface, VREPInterface> planner(*interface, *interface, *args);
 
-		KPIECE<VREPInterface, VREPInterface> planner(*interface, *interface, *args);
->>>>>>> skiesel/master
+//		std::cerr << "Start planner\n";
 
-		planner.query(start, goal);
-	});
+		std::cerr << "Start state: \n";
+		start.print();
+		start.printGoalPostition();
+		start.printGoalOrientation();
+
+		std::cerr << "Goal state: \n";
+		goal.print();
+		goal.printGoalPostition();
+		goal.printGoalOrientation();
+
+//		planner.query(start, goal);
+//		std::cerr << "Planner stopped\n";
+//	});
+
+	interface->makeStartState(startState);
+
+
+	std::cout << "Plugin started";
 
 	return 1;
 }
@@ -118,19 +147,82 @@ VREP_DLLEXPORT void v_repEnd() {
 VREP_DLLEXPORT void* v_repMessage(int message,int* auxiliaryData,void* customData,int* replyData) {
 	// This is called quite often. Just watch out for messages/events you want to handle
 	// This function should not generate any error messages:
+
+	// Keep following 5 lines at the beginning and unchanged:
+	static bool refreshDlgFlag=true;
+	int errorModeSaved;
+	simGetIntegerParameter(sim_intparam_error_report_mode,&errorModeSaved);
+	simSetIntegerParameter(sim_intparam_error_report_mode,sim_api_errormessage_ignore);
 	void* retVal=NULL;
 
-	if(start < 0) {	
-		start = simGetSimulationTime();
-		dt = interface->simulatorReady();
-	}
-	
-	simFloat curDT = simGetSimulationTime() - start;
-	bool collision = interface->collision();
-	if(collision || dt <= curDT) {
-		interface->simulatorDone(curDT, collision);
-		start = -1;
+//	std::cout << "Plugin::Skiesel:: Start: " << start;
+
+//	if(start < 0) {
+//		start = simGetSimulationTime();
+//		std::cerr << "Plugin::Skiesel:: Simulation time: " << start << std::endl;
+//		std::cerr << "Plugin::Skiesel:: Singal ready" << std::endl;
+//		dt = interface->simulatorReady();
+//		std::cerr << "Plugin::Skiesel:: Interface ready" << std::endl;
+//	} else {
+//
+//	}
+//
+//	simFloat curDT = simGetSimulationTime() - start;
+//	bool collision = interface->collision();
+//	if(collision || dt <= curDT) {
+//		const std::string cause = collision ? "Collision detected. " : "Time is up. ";
+//		std::cerr << "Plugin::Skiesel:: Simulation is over. " << cause << std::endl;
+//
+//		interface->simulatorDone(curDT, collision);
+//		start = -1;
+//	}
+
+	typedef UniformSampler<VREPInterface, VREPInterface> Sampler;
+	Sampler sampler(*interface, *interface);
+
+	auto state = sampler.sampleConfiguration();
+//	VREPInterface::State start;
+//	interface->makeStartState(start);
+
+
+    // A script called simOpenModule (by default the main script). Is only called during simulation.
+    if (message == sim_message_eventcallback_moduleopen) {
+        // is the command also meant for this plugin?
+        if ((customData == NULL) || (strcmp(pluginName, (char *) customData) == 0)) {
+            // we arrive here only at the beginning of a simulation
+			std::cerr << "Plugin::Skiesel:: Module open" << std::endl;
+		}
+    }
+
+    // A script called simHandleModule (by default the main script). Is only called during simulation.
+    if (message == sim_message_eventcallback_modulehandle) {
+        // is the command also meant for this plugin?
+        if ((customData == NULL) || (strcmp(pluginName, (char *) customData) == 0)) {
+            // we arrive here only while a simulation is running
+			std::cerr << "Plugin::Skiesel:: Module handle" << std::endl;
+			auto goal = startState;
+
+			goal.stateVars = getConfiguration("Goal").getStateVars();
+			startState.print();
+			goal.print();
+			interface->loadState(goal);
+		}
+    }
+
+    // A script called simCloseModule (by default the main script). Is only called during simulation.
+    if (message == sim_message_eventcallback_moduleclose) {
+        // is the command also meant for this plugin?
+        if ((customData == NULL) || (strcmp(pluginName, (char *) customData) == 0)) {
+            // we arrive here only at the end of a simulation
+			std::cerr << "Plugin::Skiesel:: Module close"  << std::endl;
+		}
+    }
+
+	// Simulation ended:
+	if (message==sim_message_eventcallback_simulationended)	{
 	}
 
+	// Keep following unchanged:
+	simSetIntegerParameter(sim_intparam_error_report_mode,errorModeSaved); // restore previous settings
 	return retVal;
 }

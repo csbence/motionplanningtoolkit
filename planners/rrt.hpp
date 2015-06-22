@@ -2,7 +2,7 @@
 
 #include <flann/flann.hpp>
 #include <boost/pool/object_pool.hpp>
-#include "../utilities/Clock.hpp"
+#include "../utilities/Timer.hpp"
 
 template<class Workspace, class Agent, class Sampler, class NN>
 class RRT {
@@ -37,7 +37,7 @@ public:
 
 		unsigned int iterations = 0;
 
-		clock.start();
+		timer.start();
 
 		while(true && poseNumber == -1) {
 
@@ -54,21 +54,24 @@ public:
 
 			State nearest = result.elements[0]->end;
 
+			std::cerr << "RRT iter 2 \n";
+
 			auto edge = agent.steer(nearest, sample, steeringDT);
 			//auto edge = agent.randomSteer(nearest, steeringDT);
 
+			std::cerr << "RRT iter 2.1\n";
+
 			if(!workspace.safeEdge(agent, edge, collisionCheckDT)) {
 				++iterations;
-				
+
 				if(iterationsAtATime > 0 && ++iterations > iterationsAtATime) break;
 
 				continue;
 			}
 
 			if(agent.isGoal(edge.end, goal)) {
-				clock.stop();
-				fprintf(stdout, "RRT solved in %d[ms]\n", clock.getDurationInMillis());
-
+				timer.stop();
+				fprintf(stdout, "RRT solved in %d[ms]\n", timer.getDurationInMillis());
 
 				fprintf(stderr, "found goal\n");
 				std::vector<const Edge*> newSolution;
@@ -104,7 +107,7 @@ public:
 			if(iterationsAtATime > 0 && ++iterations > iterationsAtATime) break;
 		}
 
-		clock.stop();
+		timer.stop();
 
 #ifdef WITHGRAPHICS
 		for(const Edge* edge : treeEdges) {
@@ -152,5 +155,5 @@ private:
 	double solutionCost;
 	double steeringDT, collisionCheckDT;
 	int poseNumber;
-	Clock clock;
+	Timer timer;
 };

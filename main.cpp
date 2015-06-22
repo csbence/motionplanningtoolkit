@@ -56,8 +56,8 @@ void omnidirectional(const InstanceFileMap& args) {
     KDTreeType kdtreeType;
     KDTree kdtree(kdtreeType, agent.getTreeStateSize());
 
-    Planner planner(workspace, agent, sampler, kdtree, args);
-//    HybridPlanner planner(workspace, agent, sampler, args);
+//    Planner planner(workspace, agent, sampler, kdtree, args);
+    HybridPlanner planner(workspace, agent, sampler, args);
 
 
 #ifdef WITHGRAPHICS

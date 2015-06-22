@@ -1,8 +1,9 @@
 #pragma once
 
 #include <flann/flann.hpp>
-
 #include <unordered_map>
+#include <iostream>
+
 
 template<class KDTreeType, class DistanceMetric, class Element>
 class FLANN_KDTreeWrapper {
@@ -59,6 +60,7 @@ public:
 
 	KNNResult kNearest(const Element *elem, unsigned int k) {
 		assert(k > 0);
+		assert(elem != NULL);
 
 		auto stateVars = elem->getTreeStateVars();
 		flann::Matrix<double> point(stateVars.data(), 1, stateVars.size());

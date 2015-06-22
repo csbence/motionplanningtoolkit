@@ -4,7 +4,7 @@ project (MotionPlanning)
 set(CMAKE_MODULE_PATH
   ${PROJECT_SOURCE_DIR}/CMakeModules
 )
-set(BUILDGRAPHICS 1)
+set(BUILDGRAPHICS 0)
 
 set(CMAKE_CXX_FLAGS "-std=c++11 ${CMAKE_CXX_FLAGS}")
 
@@ -33,6 +33,7 @@ include_directories(
 	${FCL_LIBRARY_DIRS}
 	${ASSIMP_LIBRARY_DIRS}
 	${OMPL_INCLUDE_DIRS}
+	"dependencies/ompl/src"
 	"dependencies/V-REP_PRO_EDU_V3_2_1_Mac/programming/include"
 )
 
@@ -95,7 +96,6 @@ ADD_CUSTOM_COMMAND(
 	TARGET v_repExtskiesel
 	POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E copy ARGS ${CMAKE_BINARY_DIR}/libv_repExtskiesel.dylib
-#	${CMAKE_BINARY_DIR}/../dependencies/V-REP_PRO_EDU_V3_2_1_Mac/vrep.app/Contents/MacOS/
 	${CMAKE_SOURCE_DIR}/dependencies/V-REP_PRO_EDU_V3_2_1_Mac/vrep.app/Contents/MacOS/
 )
 

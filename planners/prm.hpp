@@ -138,11 +138,11 @@ public:
         }
 
     private:
-        AgentState &internalState; // TODO WARNING &?
+        AgentState &internalState;
         Vertex vertex;
     };
 
-    typedef flann::KDTreeIndexParams KDTreeType;
+    typedef flann::KDTreeSingleIndexParams KDTreeType;
 
     typedef FLANN_KDTreeWrapper<KDTreeType, flann::L2<double>, VertexWrapper<Graph>> KDTree;
 
@@ -206,9 +206,13 @@ public:
 
         // Create nodes for the start and goal states
         if (firstInvocation) {
-            startVertex = addMilestone(start);
-            goalVertex = addMilestone(goal);
+            fprintf(stdout, "query::Debug add start\n");
+            startVertex = addMilestone(goal);
+            fprintf(stdout, "query::Debug add goal\n");
+            goalVertex = addMilestone(start);
         }
+
+//        return true;
 
         if (prmBuilt) {
             constructSolution();
@@ -281,6 +285,7 @@ public:
         return false;
     }
 
+#ifdef WITHGRAPHICS
     inline void drawCurrentState(const AgentState &start, const AgentState &goal) {
         // Draw start end goal states
         start.draw();
@@ -309,6 +314,8 @@ public:
 
         }
     }
+#endif
+
 
     const Graph &getRoadmap() const {
         return graph;
@@ -329,7 +336,6 @@ protected:
     /** \brief Construct a milestone for a given state (\e state), store it in the nearest neighbors data structure
     and then connect it to the roadmap in accordance to the connection strategy. */
     Vertex addMilestone(AgentState sourceState) {
-//        boost::mutex::scoped_lock _(graphMutex_);
 
         // Create a new vertex in the graph
         Vertex sourceVertex = boost::add_vertex(graph);
@@ -369,7 +375,7 @@ protected:
                 successfulConnectionAttemptsProperty[sourceVertex]++;
                 successfulConnectionAttemptsProperty[targetVertex]++;
 
-                auto *targetEdge = agentEdgePool.construct(edge.start, edge.end, edge.cost);
+                auto *targetEdge = agentEdgePool.construct(edge);
                 typename Graph::edge_property_type properties(targetEdge, edge.cost);
 
                 auto edgePair = boost::add_edge(targetVertex, sourceVertex, properties, graph);

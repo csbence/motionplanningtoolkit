@@ -65,18 +65,18 @@ public:
 
 private:
 
-	inline std::string &ltrim(std::string &s) {
+	inline std::string &ltrim(std::string &s) const {
 		s.erase(s.begin(), std::find_if(s.begin(), s.end(), std::not1(std::ptr_fun<int, int>(std::isspace))));
 		return s;
 	}
 
 
-	inline std::string &rtrim(std::string &s) {
+	inline std::string &rtrim(std::string &s) const {
 		s.erase(std::find_if(s.rbegin(), s.rend(), std::not1(std::ptr_fun<int, int>(std::isspace))).base(), s.end());
 		return s;
 	}
 
-	inline std::string &trim(std::string &s) {
+	inline std::string &trim(std::string &s) const {
 		return ltrim(rtrim(s));
 	}
 

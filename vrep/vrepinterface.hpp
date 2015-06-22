@@ -48,10 +48,39 @@ public:
 			fprintf(stderr, "\n");
 		}
 
+		void printGoalPostition() const {
+			for(auto v : goalPositionVars) { fprintf(stderr, "%g ", v); }
+			fprintf(stderr, "\n");
+		}
+
+		void printGoalOrientation() const {
+			for(auto v : goalOrientationVars) { fprintf(stderr, "%g ", v); }
+			fprintf(stderr, "\n");
+		}
+
+
+		int getPointIndex() const { return treeIndex; }
+		void setPointIndex(int ptInd) { treeIndex = ptInd; }
+
 		StateVars stateVars, goalPositionVars, goalOrientationVars;
+		int treeIndex;
+
+		/**
+		 * Get it from the initial state.
+		 *
+		 *
+		 * sample.poses = initial.poses
+sample.velocites.resize(initial.velocities.size(), 0)
+		 * State sample(initialState)
+		 */
 		simChar *poses;
+
+		/**
+		 * 6 for each object in the tree.
+		 */
 		std::vector<double> velocities, targetVelocities, targetPositions;
 
+		/** Size of state vars*/
 		static unsigned int fullStateSize;
 	};
 
@@ -70,6 +99,34 @@ public:
 			end.print();
 		}
 
+//		std::vector<State> getPoses(double dt) {
+//			std::vector<State> poses;
+//
+//			const unsigned int numberOfPoses = distance / dt;
+//
+//			double stepSize = dt / distance;
+//			double ratio;
+//
+//			for (int i = 0; i <= numberOfPoses; ++i) {
+//				ratio = i / numberOfPoses;
+//				assert(ratio >= 0 && ratio <= 1);
+//
+//				auto sourceStateVars = start.getStateVars();
+//				auto targetStateVars = start.getStateVars();
+//
+//				// Create a new vector
+//				poses.emplace_back(sourceStateVars.size());
+//				auto pose = poses.back();
+//
+//				std::transform(sourceStateVars.begin(), sourceStateVars.end(), targetStateVars.begin(), pose.begin(),
+//							   [](double sourceStateVar, double targetStateVar) -> double {
+//								   return targetStateVars * ratio + sourceStateVars * (ratio - 1);
+//							   });
+//			}
+//
+//			return poses;
+//		}
+
 		/* needed for being inserted into NN datastructure */
 		const StateVars &getTreeStateVars() const { return end.getStateVars(); }
 		int getPointIndex() const { return treeIndex; }
@@ -85,7 +142,7 @@ public:
 	VREPInterface(const InstanceFileMap &args) : simulatorBarrier(2) {
 		simLoadScene(args.value("Scene File").c_str());
 
-		std::string agentName = args.value("Agent Handle Name");
+		std::string const agentName = args.value("Agent Handle Name");
 		agentHandle = agentName == "EVERYTHING" ? sim_handle_all : simGetObjectHandle(agentName.c_str());
 
 		agentObjectTree = simGetObjectsInTree(agentHandle, sim_handle_all, 0, &agentObjectCount);
@@ -183,6 +240,9 @@ public:
 		return true;;
 	}
 
+	bool safeAbstractEdge(const VREPInterface &agent, const fcl::Transform3f &pose1, const fcl::Transform3f &pose2) const {
+
+	}
 
 	//from the perspective of the agent
 	StateVarRanges getStateVarRanges(const WorkspaceBounds &bounds) const {
@@ -200,6 +260,58 @@ public:
 	Edge steer(const State &start, const State &goal, double dt) const {
 		return randomSteer(start, dt);
 	}
+
+	/**
+	 * Interpolate between the start and goal state.
+	 *
+	 * Does not check for dynamics.
+	 */
+//	Edge interpolatePosition(const State &source, const State &source, const double dt) const {
+//		Edge edge(source);
+//		edge.end = target;
+//		edge.safe = false;
+//
+////		auto const jointMode = simGetJointMode(agentHandle);
+//
+//		for (auto pose : edge.getPoses(dt)) {
+//			loadState(start);
+//
+//			/* variables used for state comparison */
+//			for(simInt handle : statePositionHandles) {
+//				simGetObjectPosition(handle, -1, vals);
+//				for(unsigned int i = 0; i < 3; ++i)
+//					s.stateVars.push_back(vals[i]);
+//			}
+//
+//			std::pair<double, bool> result = startSimulation(dt);
+//
+//			saveState(end);
+//		}
+//
+//		loadState(start);
+//
+////		if(collision()) { return edge; }
+////
+////		std::vector<double> controls;
+////		for(unsigned int i = 0; i < controllableVelocityJointHandles.size(); ++i) {
+//////			double control =
+////			controls.push_back(controlVelocityDistributions[i](generator));
+////			simSetJointTargetVelocity(controllableVelocityJointHandles[i], controls.back());
+////		}
+////
+////		for(unsigned int i = 0; i < controllablePositionJointHandles.size(); ++i) {
+////			controls.push_back(controlPositionDistributions[i](generator));
+////			simSetJointTargetPosition(controllablePositionJointHandles[i], controls.back());
+////		}
+////
+////		std::pair<double, bool> result = startSimulation(dt);
+////
+////		if(result.second || collision()) { return edge; }
+////
+////		State end;
+////
+////		return Edge(start, end, dt, controls, result.first, true);
+//	}
 
 	Edge steerWithControl(const State &start, const Control &control, double dt) const {
 		return Edge(start);
@@ -257,6 +369,7 @@ public:
 	}
 
 	void animateSolution(const std::vector<const Edge*> &solution) const {
+		std::cerr << "animateSolution\n";
 		while(true) {
 			for(const Edge* edge : solution) {
 				loadState(edge->start);
@@ -310,6 +423,11 @@ public:
 		return simCheckCollision(agentCollisionGroupHandle, collisionCheckAgainstThisGroup) == 1;
 	}
 
+	/**
+	 * Extract the current state of the agent from the V-REP simulator.
+	 *
+	 * Set the velocities, targetVelocities, targetPositions, and state variables of the given State.
+	 */
 	void saveState(State& s) const {
 		// s.poses = simGetConfigurationTree(sim_handle_all);
 		s.poses = simGetConfigurationTree(agentHandle);
@@ -365,6 +483,9 @@ public:
 
 	}
 
+	/**
+	 * Inject the current state of the agent into the V-REP simulator.
+	 */
 	void loadState(const State &s) const {
 		unsigned int curTarget = 0;
 

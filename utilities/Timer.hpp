@@ -4,19 +4,19 @@
 #include <chrono>
 #include <mutex>
 
-class Clock {
+class Timer {
 
     typedef std::chrono::duration<unsigned int, std::milli> Millisecond;
 
 public:
 
-    Clock(std::string name = "") : running(false),
+    Timer(std::string name = "") : running(false),
                               totalDuration(0),
                               lock(),
                               name(name) {
     }
 
-    ~Clock() { }
+    ~Timer() { }
 
     void start() {
         std::lock_guard<std::mutex> guard(lock);
