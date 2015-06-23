@@ -74,7 +74,7 @@ public:
 
 		KNNResult result;
 
-		if(indices[0].size() <= 0) {
+		if(indices[0].size() < 0) {
 			fprintf(stderr, "%zu\n", kdtree.size());
 		}
 
@@ -95,18 +95,22 @@ public:
 		std::vector< std::vector<int> > indices;
 		std::vector< std::vector<double> > distances;
 
-		flann::SearchParams params(flann::FLANN_CHECKS_UNLIMITED, epsilon);
+		flann::SearchParams params(32, epsilon, false);
 		params.max_neighbors = max_neighbors;
 
 		kdtree.radiusSearch(point, indices, distances, radius, params);
 
 		KNNResult result;
 
-		for(unsigned int i = 0; i < indices.size(); ++i) {
-			if(indices[i].size() <= 0) continue;
+		const int s = indices[0].size();
 
-			result.elements.push_back(lookup.at(indices[i][0]).data);
-			result.distances.push_back(distances[i][0]);
+		if(indices[0].size() < 0) {
+			fprintf(stderr, "%zu\n", kdtree.size());
+		}
+
+		for(unsigned int i = 0; i < s; ++i) {
+			result.elements.push_back(lookup.at(indices[0][i]).data);
+			result.distances.push_back(distances[0][i]);
 		}
 
 		return result;

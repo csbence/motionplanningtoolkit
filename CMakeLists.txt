@@ -4,7 +4,7 @@ project (MotionPlanning)
 set(CMAKE_MODULE_PATH
   ${PROJECT_SOURCE_DIR}/CMakeModules
 )
-set(BUILDGRAPHICS 0)
+set(BUILDGRAPHICS 1)
 
 set(CMAKE_CXX_FLAGS "-std=c++11 ${CMAKE_CXX_FLAGS}")
 

@@ -98,7 +98,7 @@ public:
         Graph &graph;
     };
 
-    typedef flann::KDTreeSingleIndexParams KDTreeType;
+    typedef flann::KDTreeIndexParams KDTreeType;
 
     typedef FLANN_KDTreeWrapper<KDTreeType, flann::L2<double>, VertexWrapper<Graph>> KDTree;
 
@@ -110,7 +110,7 @@ public:
             : workspace(workspace),
               agent(agent),
               sampler(sampler),
-              nn(KDTree(KDTreeType(), 3)),
+              nn(KDTree(KDTreeType(), 3, 0)),
               stateProperty(boost::get(InternalState(), graph)),
               edgeProperty(boost::get(InternalEdge(), graph)),
               edgeWeightProperty(boost::get(boost::edge_weight, graph)),
@@ -122,38 +122,73 @@ public:
               openRegionSet(),
               treeGroupMap(),
               distribution(0, 1),
-              timer() {
+              timer(),
+              agentEdgePool(),
+              vertexWrapperPool() {
 
         steeringDT = stod(args.value("Steering Delta t"));
         collisionCheckDT = stod(args.value("Collision Check Delta t"));
     }
 
     void expandMotionTree(const AgentState &goal) {
-        for (int i = 0; i < 100; i++) {
-            // Sample source region
-            Region region = openRegions.sample(distribution(generator));
+        for (int i = 0; i < 10000; i++) {
 
-            // Get the vertexes in the sampled region
-            std::__1::vector<Vertex> verticesInRegion = treeGroupMap.find(region)->second;
+            const Vertex sourceVertex = selectVertex();
 
-            // Select a random state in the region
-            std::__1::uniform_int_distribution<> intDistribution(0, verticesInRegion.size() - 1);
-            Vertex &sourceVertex = verticesInRegion[intDistribution(generator)];
+            std::unique_ptr<std::vector<Vertex>> expandedVertices = expandFromState(sourceVertex, stateExpansionCount,
+                                                                                    goal);
 
+//            fprintf(stderr, "Expanded: %d \n", expandedVertices->size());
+
+            // TODO drain expansion radius
+
+//            Vertex vertex;
+//            for (auto it = expandedVertices->begin(); it != expandedVertices->end(); ++it) {
+//                vertex = *it;
+//
+//                // Get vertexes in drain range
+//                VertexWrapper<Graph> vertexWrapper(vertex, graph);
+//
+//                //Insert vertex into nearestNeighbor data structure
+//                auto sourceWrapper = vertexWrapperPool.construct(vertex, graph);
+////                nn.insertPoint(sourceWrapper);
+//
+//                auto near = nn.kNearestWithin(sourceWrapper, drainRadius);
+//////                const std::vector<VertexWrapper<Graph> *> &neighbors = near.elements;
+//////
+//////                // Deactivate or remove more expensive neighbors
+//////                for (const VertexWrapper<Graph> *neighborWrapper : neighbors) {
+//////                }
+//            }
+
+
+//            if (i % 10 == 0) {
+//                fprintf(stderr, "Number of iterations: %d \n", i);
+//            }
+
+            if (solutionFound) {
+//                fprintf(stderr, "Total number of iterations: %d \n", i);
+                return;
+            }
+        }
+    }
+
+    std::unique_ptr<std::vector<
+            Vertex>> expandFromState(Vertex sourceVertex, const unsigned int expansionCount, const AgentState &goal) {
+
+        // List of recently expanded vertices
+        std::unique_ptr<std::vector<Vertex>> expandedVertices(new std::vector<Vertex>());
+
+        for (int i = 0; i < expansionCount; ++i) {
             auto edge = agent.randomSteer(stateProperty[sourceVertex], steeringDT);
 
             if (!workspace.safeEdge(agent, edge, collisionCheckDT)) {
-                continue;
-            }
-
-            if (agent.isGoal(edge.end, goal)) {
-                fprintf(stdout, "AHS solution found!");
-                solutionFound = true;
                 break;
             }
 
             // Expand tree
             AgentEdge *targetEdge = agentEdgePool.construct(edge);
+
             AgentState targetState = edge.end;
             Vertex targetVertex = addState(targetState);
 
@@ -165,19 +200,63 @@ public:
             const double cost = prm.getRegionCost(targetRegion);
 
             if (openRegionSet.find(targetRegion) == openRegionSet.end()) {
-                // Region not found
-
-                openRegionSet.insert(targetRegion);
-                openRegions.add(targetRegion, 1.0 / cost);
+                // Region is not open yet
+                // Open Region
+                auto element = openRegions.add(targetRegion, 1.0 / cost);
+                openRegionSet[targetRegion] = element;
             }
 
             assignVertexToRegion(targetRegion, targetVertex);
+            expandedVertices->push_back(targetVertex);
+
+            if (agent.isGoal(edge.end, goal)) {
+                fprintf(stdout, "Solution found!");
+                solutionFound = true;
+                break;
+            }
+
+            // Change target vertex to source
+            sourceVertex = targetVertex;
+        }
+
+        return std::move(expandedVertices);
+    }
+
+    /**
+     * Select a region based on the probability distribution and returns a random vertex from that region.
+     * The weight of the selected region is decreased.
+     */
+    Vertex selectVertex() {
+        // Sample source region
+        Region region = openRegions.sample(distribution(generator));
+        discountRegion(region);
+
+        // Get the vertexes in the sampled region
+        std::__1::vector<Vertex> verticesInRegion = treeGroupMap.find(region)->second;
+
+        // Select a random state in the region
+        std::__1::uniform_int_distribution<> intDistribution(0, verticesInRegion.size() - 1);
+        Vertex sourceVertex = verticesInRegion[intDistribution(generator)];
+        return sourceVertex;
+    }
+
+    /**
+     * Decrease the weight of the given region.
+     */
+    void discountRegion(Region region) {
+        auto found = openRegionSet.find(region);
+
+        if (found != openRegionSet.end()) {
+
+            auto element = found->second;
+            const double weight = openRegions.getWeight(element);
+            openRegions.update(element, weight * regionDiscount);
         }
     }
 
     bool query(const AgentState &start, const AgentState &goal, int iterationsAtATime = -1, bool firstInvocation = true) {
 
-        fprintf(stdout, "AnytimeHybridSearch called!");
+        fprintf(stdout, ".");
 
 #ifdef WITHGRAPHICS
         drawCurrentState();
@@ -206,8 +285,10 @@ public:
             const Region startRegion = prm.getContainingRegion(start);
             const double cost = prm.getRegionCost(startRegion);
 
-            openRegions.add(startRegion, 1.0 / cost);
-            openRegionSet.insert(startRegion);
+            auto element = openRegions.add(startRegion, 1.0 / cost);
+//            openRegionSet.insert(typename decltype(openRegionSet)::value_type(startRegion, element));
+            openRegionSet[startRegion] = element;
+
             assignVertexToRegion(startRegion, startVertex);
         }
 
@@ -235,6 +316,9 @@ public:
         }
     }
 
+    /**
+     * Assign the given state to a new vertex in the graph.
+     */
     Vertex addState(const AgentState &state) {
 
         // Create a new vertex in the graph
@@ -301,14 +385,18 @@ private:
      * Set of open regions for fast region lookup.
      * The probability distribution does not support this feature.
      */
-    std::set<Region> openRegionSet;
+    std::unordered_map<Region, typename PDF<Region>::Element *> openRegionSet;
 
     TreeGroupMap<Region, Vertex> treeGroupMap;
 
-    std::uniform_real_distribution<> distribution;
-    std::default_random_engine generator;
+    mutable std::uniform_real_distribution<> distribution;
+    mutable std::default_random_engine generator;
 
     Timer timer;
+
+    constexpr static const double regionDiscount = 1;
+    constexpr static const double drainRadius = 1;
+    constexpr static const int stateExpansionCount = 10;
 
 };
 

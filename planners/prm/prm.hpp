@@ -142,7 +142,7 @@ public:
         Vertex vertex;
     };
 
-    typedef flann::KDTreeSingleIndexParams KDTreeType;
+    typedef flann::KDTreeIndexParams KDTreeType;
 
     typedef FLANN_KDTreeWrapper<KDTreeType, flann::L2<double>, VertexWrapper<Graph>> KDTree;
 
@@ -206,13 +206,9 @@ public:
 
         // Create nodes for the start and goal states
         if (firstInvocation) {
-            fprintf(stdout, "query::Debug add start\n");
-            startVertex = addMilestone(goal);
-            fprintf(stdout, "query::Debug add goal\n");
-            goalVertex = addMilestone(start);
+            startVertex = addMilestone(start);
+            goalVertex = addMilestone(goal);
         }
-
-//        return true;
 
         if (prmBuilt) {
             constructSolution();
