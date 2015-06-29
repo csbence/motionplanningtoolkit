@@ -4,7 +4,7 @@
 #include <unordered_map>
 #include <fcl/math/transform.h>
 
-#include "../utilities/flannkdtreewrapper.hpp"
+#include "../../utilities/flannkdtreewrapper.hpp"
 
 template <class Workspace, class Agent>
 class PRMLite {
