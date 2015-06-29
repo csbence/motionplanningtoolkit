@@ -10,6 +10,9 @@
 #include "../samplers/uniformsampler.hpp"
 #include "../utilities/flannkdtreewrapper.hpp"
 #include "../planners/AnytimeHybridSearch.hpp"
+#include "../tree_interfaces/treeinterface.hpp"
+#include "../tree_interfaces/plakutreeinterface.hpp"
+#include "../discretizations/workspace/prmlite.hpp"
 
 #include <boost/thread/thread.hpp>
 
@@ -93,29 +96,60 @@ VREP_DLLEXPORT unsigned char v_repStart(void* reservedPointer,int reservedInt) {
 		VREPInterface::State start;
 		interface->makeStartState(start);
 
-		VREPInterface::State goal = getConfiguration("Goal");
+//		VREPInterface::State goal = getConfiguration("Goal");
 
-		typedef UniformSampler<VREPInterface, VREPInterface> Sampler;
-		Sampler sampler(*interface, *interface);
-
-		flann::KDTreeSingleIndexParams kdtreeType;
-
-		FLANN_KDTreeWrapper<flann::KDTreeSingleIndexParams,
-							flann::L2<double>,
-							VREPInterface::Edge> kdtree(kdtreeType, interface->getTreeStateSize());
-
-		typedef AnytimeHybridSearch<VREPInterface, VREPInterface, Sampler> hybridPlanner;
-
-//		hybridPlanner planner(*interface, *interface, sampler, *args);
-
-		RRT<VREPInterface,
-			VREPInterface,
-			Sampler,
-			FLANN_KDTreeWrapper<flann::KDTreeSingleIndexParams, flann::L2<double>, VREPInterface::Edge> > planner(*interface, *interface, sampler, kdtree, *args);
-
-//		KPIECE<VREPInterface, VREPInterface> planner(*interface, *interface, *args);
+//		typedef UniformSampler<VREPInterface, VREPInterface> Sampler;
+//		Sampler sampler(*interface, *interface);
+//
+//		flann::KDTreeSingleIndexParams kdtreeType;
+//
+//		FLANN_KDTreeWrapper<flann::KDTreeSingleIndexParams,
+//							flann::L2<double>,
+//							VREPInterface::Edge> kdtree(kdtreeType, interface->getTreeStateSize());
+//
+//		typedef AnytimeHybridSearch<VREPInterface, VREPInterface, Sampler> hybridPlanner;
+//
+////		hybridPlanner planner(*interface, *interface, sampler, *args);
 
 //		std::cerr << "Start planner\n";
+		simInt goalHandle = simGetObjectHandle("Goal");
+		VREPInterface::State goal;
+		
+		simFloat vals[3];
+		simGetObjectPosition(goalHandle, -1, vals);
+		for(unsigned int i = 0; i < 3; ++i) {
+			goal.rootPosition.push_back(vals[i]);
+			goal.goalPositionVars.push_back(vals[i]);
+		}
+
+
+		simGetObjectOrientation(goalHandle, -1, vals);
+		for(unsigned int i = 0; i < 3; ++i) {
+			goal.rootOrientation.push_back(vals[i]);
+			goal.goalOrientationVars.push_back(vals[i]);
+		}
+
+		typedef flann::KDTreeSingleIndexParams KDTreeType;
+		typedef FLANN_KDTreeWrapper<KDTreeType, flann::L2<double>, VREPInterface::Edge> KDTree;
+		// typedef UniformSampler<VREPInterface, VREPInterface, KDTree> Sampler;
+		// typedef TreeInterface<VREPInterface, KDTree, Sampler> TreeInterface;
+
+		typedef PRMLite<VREPInterface, VREPInterface> PRMLite;
+		typedef PlakuTreeInterface<VREPInterface, VREPInterface, PRMLite> PlakuTreeInterface;
+
+		typedef RRT<VREPInterface, VREPInterface, PlakuTreeInterface> Planner;
+
+		KDTreeType kdtreeType;		
+		KDTree kdtree(kdtreeType, interface->getTreeStateSize());
+		// Sampler sampler(*interface, *interface, kdtree);
+		// TreeInterface treeInterface(kdtree, sampler);
+
+		PRMLite prmLite(*interface, *interface, start, 100);
+		
+		PlakuTreeInterface plakuTreeInterface(*interface, *interface, prmLite, start, goal, 0.5, 0.85, 10);
+
+		Planner planner(*interface, *interface, plakuTreeInterface, *args);
+		//KPIECE<VREPInterface, VREPInterface> planner(*interface, *interface, *args);
 
 		std::cerr << "Start state: \n";
 		start.print();
@@ -157,30 +191,30 @@ VREP_DLLEXPORT void* v_repMessage(int message,int* auxiliaryData,void* customDat
 
 //	std::cout << "Plugin::Skiesel:: Start: " << start;
 
-//	if(start < 0) {
-//		start = simGetSimulationTime();
-//		std::cerr << "Plugin::Skiesel:: Simulation time: " << start << std::endl;
-//		std::cerr << "Plugin::Skiesel:: Singal ready" << std::endl;
-//		dt = interface->simulatorReady();
-//		std::cerr << "Plugin::Skiesel:: Interface ready" << std::endl;
-//	} else {
-//
-//	}
-//
-//	simFloat curDT = simGetSimulationTime() - start;
-//	bool collision = interface->collision();
-//	if(collision || dt <= curDT) {
-//		const std::string cause = collision ? "Collision detected. " : "Time is up. ";
-//		std::cerr << "Plugin::Skiesel:: Simulation is over. " << cause << std::endl;
-//
-//		interface->simulatorDone(curDT, collision);
-//		start = -1;
-//	}
+	if(start < 0) {
+		start = simGetSimulationTime();
+		std::cerr << "Plugin::Skiesel:: Simulation time: " << start << std::endl;
+		std::cerr << "Plugin::Skiesel:: Singal ready" << std::endl;
+		dt = interface->simulatorReady();
+		std::cerr << "Plugin::Skiesel:: Interface ready" << std::endl;
+	} else {
 
-	typedef UniformSampler<VREPInterface, VREPInterface> Sampler;
-	Sampler sampler(*interface, *interface);
+	}
 
-	auto state = sampler.sampleConfiguration();
+	simFloat curDT = simGetSimulationTime() - start;
+	bool collision = interface->collision();
+	if(collision || dt <= curDT) {
+		const std::string cause = collision ? "Collision detected. " : "Time is up. ";
+		std::cerr << "Plugin::Skiesel:: Simulation is over. " << cause << std::endl;
+
+		interface->simulatorDone(curDT, collision);
+		start = -1;
+	}
+
+//	typedef UniformSampler<VREPInterface, VREPInterface> Sampler;
+//	Sampler sampler(*interface, *interface);
+//
+//	auto state = sampler.sampleConfiguration();
 //	VREPInterface::State start;
 //	interface->makeStartState(start);
 
@@ -200,12 +234,12 @@ VREP_DLLEXPORT void* v_repMessage(int message,int* auxiliaryData,void* customDat
         if ((customData == NULL) || (strcmp(pluginName, (char *) customData) == 0)) {
             // we arrive here only while a simulation is running
 			std::cerr << "Plugin::Skiesel:: Module handle" << std::endl;
-			auto goal = startState;
+//			auto goal = startState;
 
-			goal.stateVars = getConfiguration("Goal").getStateVars();
-			startState.print();
-			goal.print();
-			interface->loadState(goal);
+//			goal.stateVars = getConfiguration("Goal").getStateVars();
+//			startState.print();
+//			goal.print();
+//			interface->loadState(goal);
 		}
     }
 

@@ -3,6 +3,7 @@
 #include <vector>
 #include <random>
 #include <boost/thread/barrier.hpp>
+#include <fcl/math/transform.h>
 
 class VREPInterface {
 public:
@@ -17,6 +18,8 @@ public:
 		State() {}
 
 		State(const State &s) : stateVars(s.stateVars.begin(), s.stateVars.end()),
+		 rootPosition(s.rootPosition.begin(), s.rootPosition.end()),
+		 rootOrientation(s.rootOrientation.begin(), s.rootOrientation.end()),
 		 goalPositionVars(s.goalPositionVars.begin(), s.goalPositionVars.end()),
 		 goalOrientationVars(s.goalOrientationVars.begin(), s.goalOrientationVars.end()),
 		 poses(s.poses),
@@ -43,6 +46,13 @@ public:
 			return true;
 		}
 
+		fcl::Transform3f getTransform() const {
+			fcl::Vec3f position(rootPosition[0], rootPosition[1], rootPosition[2]);
+			fcl::Quaternion3f quaternion;
+			quaternion.fromEuler(rootOrientation[0], rootOrientation[1], rootOrientation[2]);
+			return fcl::Transform3f(quaternion, position);
+		}
+
 		void print() const {
 			for(auto v : stateVars) { fprintf(stderr, "%g ", v); }
 			fprintf(stderr, "\n");
@@ -61,18 +71,9 @@ public:
 
 		int getPointIndex() const { return treeIndex; }
 		void setPointIndex(int ptInd) { treeIndex = ptInd; }
-
-		StateVars stateVars, goalPositionVars, goalOrientationVars;
 		int treeIndex;
 
-		/**
-		 * Get it from the initial state.
-		 *
-		 *
-		 * sample.poses = initial.poses
-sample.velocites.resize(initial.velocities.size(), 0)
-		 * State sample(initialState)
-		 */
+		StateVars stateVars, rootPosition, rootOrientation, goalPositionVars, goalOrientationVars;
 		simChar *poses;
 
 		/**
@@ -170,21 +171,35 @@ sample.velocites.resize(initial.velocities.size(), 0)
 			goalOrientationThresholds.push_back(std::stod(thresh));
 		}
 
-		std::vector<std::string> box = args.valueList("Sampling Ranges");
+		std::vector<std::string> ranges = args.valueList("Workspace Bounds");
 		int i = 0;
-		for(const std::string &bound : box) {
+		for(const std::string &range : ranges) {
 			int which = i / 2;
 			bool isMin = (i % 2) == 0;
 			if(isMin) {
-				bounds.emplace_back();
-				bounds[which].first = std::stod(bound);
+				workspaceBounds.emplace_back();
+				workspaceBounds[which].first = std::stod(range);
 			} else {
-				bounds[which].second = std::stod(bound);
+				workspaceBounds[which].second = std::stod(range);
 			}
 			i++;
 		}
 
-		std::vector<std::string> ranges = args.valueList("Controllable Velocity Joint Ranges");
+		ranges = args.valueList("Sampling Ranges");
+		i = 0;
+		for(const std::string &range : ranges) {
+			int which = i / 2;
+			bool isMin = (i % 2) == 0;
+			if(isMin) {
+				samplingBounds.emplace_back();
+				samplingBounds[which].first = std::stod(range);
+			} else {
+				samplingBounds[which].second = std::stod(range);
+			}
+			i++;
+		}
+
+		ranges = args.valueList("Controllable Velocity Joint Ranges");
 		i = 0;
 		simFloat prev;
 		for(const std::string &val : ranges) {
@@ -229,14 +244,18 @@ sample.velocites.resize(initial.velocities.size(), 0)
 
 	//from the perspective of the environment
 	const WorkspaceBounds &getBounds() const {
-		return bounds;
+		return workspaceBounds;
 	}
 
 	bool safeEdge(const VREPInterface &agent, const Edge &edge, double dt) const {
 		return edge.safe;
 	}
 
-	bool safePoses(const VREPInterface &agent /*, const std::vector<fcl::Transform3f> &poses*/) const {
+	bool safePoses(const VREPInterface &agent , const std::vector<fcl::Transform3f> &poses) const {
+		return true;;
+	}
+
+	bool safePose(const VREPInterface &agent , const fcl::Transform3f &pose) const {
 		return true;;
 	}
 
@@ -246,7 +265,7 @@ sample.velocites.resize(initial.velocities.size(), 0)
 
 	//from the perspective of the agent
 	StateVarRanges getStateVarRanges(const WorkspaceBounds &bounds) const {
-		return bounds;
+		return samplingBounds;
 	}
 
 	const std::vector< std::pair<double, double> >& getControlBounds() const {
@@ -255,6 +274,32 @@ sample.velocites.resize(initial.velocities.size(), 0)
 
 	State buildState(const StateVars &vars) const {
 		return State(vars);
+	}
+
+	State transformToState(const State& s, const fcl::Transform3f& transform, double radius) const {
+		loadState(s);
+
+		simFloat vals[4];
+		const fcl::Vec3f &position = transform.getTranslation();
+		const fcl::Quaternion3f &quaternion = transform.getQuatRotation();
+
+		for(unsigned int i = 0; i < 3; ++i)
+			vals[i] = position[i];
+
+		simSetObjectPosition(agentHandle, -1, vals);
+
+		vals[0] = quaternion.getX();
+		vals[1] = quaternion.getY();
+		vals[2] = quaternion.getZ();
+		vals[3] = quaternion.getW();
+
+		simSetObjectQuaternion(agentHandle, -1, vals);
+
+		State returnState;
+
+		saveState(returnState);
+		
+		return returnState;
 	}
 
 	Edge steer(const State &start, const State &goal, double dt) const {
@@ -429,6 +474,16 @@ sample.velocites.resize(initial.velocities.size(), 0)
 	 * Set the velocities, targetVelocities, targetPositions, and state variables of the given State.
 	 */
 	void saveState(State& s) const {
+		simFloat vals[6];
+
+		simGetObjectPosition(agentHandle, -1, vals);
+		for(unsigned int i = 0; i < 3; ++i)
+			s.rootPosition.push_back(vals[i]);
+
+		simGetObjectOrientation(agentHandle, -1, vals);
+		for(unsigned int i = 0; i < 3; ++i)
+			s.rootOrientation.push_back(vals[i]);
+
 		// s.poses = simGetConfigurationTree(sim_handle_all);
 		s.poses = simGetConfigurationTree(agentHandle);
 		simFloat target;
@@ -450,8 +505,6 @@ sample.velocites.resize(initial.velocities.size(), 0)
 				s.targetPositions.push_back(target);
 			}
 		}
-
-		simFloat vals[6];
 
 		/* variables used for state comparison */
 		for(simInt handle : statePositionHandles) {
@@ -535,7 +588,7 @@ sample.velocites.resize(initial.velocities.size(), 0)
 		simulatorBarrier.count_down_and_wait(); // notify simulator is done
 	}
 
-	WorkspaceBounds bounds;
+	WorkspaceBounds samplingBounds, workspaceBounds;
 	std::vector< std::pair<double, double> > controlBounds;
 	std::vector<double> goalPositionThresholds, goalOrientationThresholds;
 	int treeStateSize;

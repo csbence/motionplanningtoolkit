@@ -54,7 +54,7 @@ public:
 	};
 
 	KPIECE(const Workspace &workspace, const Agent &agent, const InstanceFileMap &args) :
-		workspace(workspace), agent(agent), foundGoal(false) {
+		workspace(workspace), agent(agent), goalEdge(NULL) {
 			collisionCheckDT = stod(args.value("Collision Check Delta t"));
 
 			const typename Workspace::WorkspaceBounds &agentStateVarRanges = agent.getStateVarRanges(workspace.getBounds());
@@ -99,11 +99,16 @@ public:
 			spaceInfoPtr->setup();
 
 			kpiece = new ompl::control::KPIECE1(spaceInfoPtr);
+
+			kpiece->setGoalBias(stod(args.value("KPIECE Goal Bias")));
+			kpiece->setBorderFraction(stod(args.value("KPIECE Border Fraction")));
+			kpiece->setCellScoreFactor(stod(args.value("KPIECE Cell Score Good")), stod(args.value("KPIECE Cell Score Bad")));
+			kpiece->setMaxCloseSamplesCount(stod(args.value("KPIECE Max Close Samples")));
+
+			//kpiece->setProjectionEvaluator();
 		}
 
-	~KPIECE() {
-		delete kpiece;
-	}
+	~KPIECE() {}
 
 	bool isStateValid(const ompl::control::SpaceInformation *si, const ompl::base::State *state) const {
 		return state->as<typename StateSpace::StateType>()->valid;
@@ -128,11 +133,13 @@ public:
 
 		resultState->valid = workspace.safeEdge(agent, edge, collisionCheckDT);
 
-		foundGoal |= workspace.isGoal(edge.end, *agentGoal);
+		if(workspace.isGoal(edge.end, *agentGoal)) {
+			goalEdge = new typename Agent::Edge(edge);
+		}
 	}
 
 	bool didFindGoal() const {
-		return foundGoal;
+		return goalEdge != NULL;
 	}
 
 	void query(const typename Agent::State &start, const typename Agent::State &goal, int iterationsAtATime = -1, bool firstInvocation = true) {
@@ -174,12 +181,16 @@ public:
 
 		ompl::base::PlannerStatus solved = kpiece->solve(tc);
 
-		if (solved) {
+		// if(solved) {
+		// 	fprintf(stderr, "found goal\n");
+		// 	ompl::base::PathPtr path = pdef->getSolutionPath();
+		// 	path->print(std::cout);
+		// } else {
+		// 	fprintf(stderr, "did not find goal\n");
+		// }
+
+		if(goalEdge != NULL) {
 			fprintf(stderr, "found goal\n");
-			ompl::base::PathPtr path = pdef->getSolutionPath();
-			path->print(std::cout);
-		} else {
-			fprintf(stderr, "did not find goal\n");
 		}
 	}
 
@@ -187,10 +198,10 @@ private:
 	const Workspace &workspace;
 	const Agent &agent;
 	typename Agent::State *agentGoal;
+	typename Agent::Edge *goalEdge;
 	ompl::control::KPIECE1 *kpiece;
 	ompl::control::SpaceInformationPtr spaceInfoPtr;
 	ompl::base::ProblemDefinitionPtr pdef;
 	unsigned int stateSpaceDim, controlSpaceDim;
 	double collisionCheckDT;
-	bool foundGoal;
 };
