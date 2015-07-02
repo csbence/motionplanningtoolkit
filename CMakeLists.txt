@@ -95,7 +95,7 @@ ADD_CUSTOM_COMMAND(
 	TARGET v_repExtskiesel
 	POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E copy ARGS ${CMAKE_BINARY_DIR}/libv_repExtskiesel.dylib
-	${CMAKE_BINARY_DIR}/../dependencies/V-REP_PRO_EDU_V3_2_1_Mac/vrep.app/Contents/MacOS/
+	${CMAKE_SOURCE_DIR}/dependencies/V-REP_PRO_EDU_V3_2_1_Mac/vrep.app/Contents/MacOS/
 )
 
 target_link_libraries(v_repExtskiesel
