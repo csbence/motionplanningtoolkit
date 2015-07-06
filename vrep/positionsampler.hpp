@@ -18,18 +18,18 @@ public:
 		}
 	}
 
-	boost::optional<State> generateSafeState(State &canonicalState) const {
+	boost::optional<State> generateSafeState(Agent &agent, State &canonicalState) const {
 		boost::optional<State> state;
-		auto transform = generateRandomValidTransform(canonicalState);
+		auto transform = generateRandomValidTransform(agent, canonicalState);
 
 		if (transform) {
-			state = Agent::transformToState(canonicalState, transform.get(), 0);
+			state = agent.transformToState(canonicalState, transform.get());
 		}
 
 		return state;
 	}
 
-	boost::optional<fcl::Transform3f> generateRandomValidTransform(State &canonicalState) const {
+	boost::optional<fcl::Transform3f> generateRandomValidTransform(Agent &agent, State &canonicalState) const {
 		boost::optional<fcl::Transform3f> validTransform;
 
 		for (int i = 0; i < 1000; i++) {
@@ -48,6 +48,8 @@ public:
 		const fcl::Vec3f translation = getRandomVector(linearDistributions, generator);
 		const fcl::Quaternion3f rotation = getRandomZOnlyQuaternion();
 		const fcl::Transform3f transform(rotation, translation);
+
+		std::cerr << "PosSampler::genRandTransform:: translation:  " << translation << std::endl;
 
 		return transform;
 	}
@@ -73,4 +75,6 @@ private:
 	const Workspace *workspace;
 	mutable std::vector<std::uniform_real_distribution<double> > linearDistributions;
 	mutable std::default_random_engine generator;
+	mutable std::uniform_real_distribution<double> zeroToOne;
+
 };
