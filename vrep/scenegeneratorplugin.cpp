@@ -21,6 +21,32 @@ VREPInterface *interface;
 InstanceFileMap *args;
 simFloat start = -1, dt = 1;
 
+namespace {
+	const char *const pluginName = "SceneGenerator";
+	PositionSampler<VREPInterface, VREPInterface> *positionSampler;
+
+	void generateState() {
+		VREPInterface::State start;
+		interface->makeStartState(start);
+
+		fprintf(stderr, "DEBUG:: Create sampler instance... \n");
+
+		fprintf(stderr, "DEBUG:: Generate safe state... \n");
+		auto safeState = positionSampler->generateSafeState(*interface, start);
+		if (safeState) {
+				fprintf(stderr, "DEBUG:: Safe state generation was successful \n");
+				auto state = safeState.get();
+
+				state.print();
+
+			} else {
+				fprintf(stderr, "DEBUG:: Safe state generation is failed \n");
+
+			}
+	}
+}
+
+
 VREP_DLLEXPORT unsigned char v_repStart(void* reservedPointer,int reservedInt) {
 	char curDirAndFile[1024];
 	getcwd(curDirAndFile, sizeof(curDirAndFile));
@@ -65,35 +91,18 @@ VREP_DLLEXPORT unsigned char v_repStart(void* reservedPointer,int reservedInt) {
 
 	interface = new VREPInterface(*args);
 
+	fprintf(stderr, "DEBUG:: Star simulation... \n");
+
 	simStartSimulation();
+
+	fprintf(stderr, "DEBUG:: Simulation started... \n");
 
 	boost::thread workerThread([&](){
 		dfheader(stdout);
 
-		VREPInterface::State start;
-		interface->makeStartState(start);
+//		generateState();
 
-		simInt goalHandle = simGetObjectHandle("Goal");
-		VREPInterface::State goal;
-
-		simFloat vals[3];
-		simGetObjectPosition(goalHandle, -1, vals);
-		for(unsigned int i = 0; i < 3; ++i) {
-			goal.rootPosition.push_back(vals[i]);
-			goal.goalPositionVars.push_back(vals[i]);
-		}
-
-		simGetObjectOrientation(goalHandle, -1, vals);
-		for(unsigned int i = 0; i < 3; ++i) {
-			goal.rootOrientation.push_back(vals[i]);
-			goal.goalOrientationVars.push_back(vals[i]);
-		}
-
-		PositionSampler<VREPInterface, VREPInterface> positionSampler(interface, interface);
-
-		auto safeState = positionSampler.generateSafeState(start);
-
-//		if(args->value("Planner").compare("RRT") == 0) {
+		//		if(args->value("Planner").compare("RRT") == 0) {
 //			solveWithRRT(interface, args, start, goal);
 //		} else if(args->value("Planner").compare("RRT Connect") == 0) {
 //			solveWithRRTConnect(interface, args, start, goal);
@@ -120,18 +129,62 @@ VREP_DLLEXPORT void* v_repMessage(int message,int* auxiliaryData,void* customDat
 	// This function should not generate any error messages:
 	void* retVal=NULL;
 
-	if(pluginActive) {
-		if(start < 0) {
-			start = simGetSimulationTime();
-			dt = interface->simulatorReady();
-		}
+//	if(pluginActive) {
+//		if(start < 0) {
+//			start = simGetSimulationTime();
+//			fprintf(stderr, "DEBUG:: Before:: Simulation ready \n");
+//			dt = interface->simulatorReady();
+//			fprintf(stderr, "DEBUG:: After:: Simulation ready \n");
+//		}
+//
+//		simFloat curDT = simGetSimulationTime() - start;
+//		bool collision = interface->collision();
+//		if(collision || dt <= curDT) {
+//			interface->simulatorDone(curDT, collision);
+//			start = -1;
+//		}
+//	}
 
-		simFloat curDT = simGetSimulationTime() - start;
-		bool collision = interface->collision();
-		if(collision || dt <= curDT) {
-			interface->simulatorDone(curDT, collision);
-			start = -1;
+	// A script called simOpenModule (by default the main script). Is only called during simulation.
+	if (message == sim_message_eventcallback_moduleopen) {
+		// is the command also meant for this plugin?
+		if ((customData == NULL) || (strcmp(pluginName, (char *) customData) == 0)) {
+			// we arrive here only at the beginning of a simulation
+			std::cerr << "Plugin::SceneGenerator:: Module open" << std::endl;
+
+			// TODO
+			positionSampler = new PositionSampler<VREPInterface, VREPInterface>(interface);
+
 		}
+	}
+
+	// A script called simHandleModule (by default the main script). Is only called during simulation.
+	if (message == sim_message_eventcallback_modulehandle) {
+		// is the command also meant for this plugin?
+		if ((customData == NULL) || (strcmp(pluginName, (char *) customData) == 0)) {
+			// we arrive here only while a simulation is running
+			std::cerr << "Plugin::SceneGenerator:: Module handle" << std::endl;
+//			auto goal = startState;
+			generateState();
+
+//			goal.stateVars = getConfiguration("Goal").getStateVars();
+//			startState.print();
+//			goal.print();
+//			interface->loadState(goal);
+		}
+	}
+
+	// A script called simCloseModule (by default the main script). Is only called during simulation.
+	if (message == sim_message_eventcallback_moduleclose) {
+		// is the command also meant for this plugin?
+		if ((customData == NULL) || (strcmp(pluginName, (char *) customData) == 0)) {
+			// we arrive here only at the end of a simulation
+			std::cerr << "Plugin::SceneGenerator:: Module close"  << std::endl;
+		}
+	}
+
+	// Simulation ended:
+	if (message==sim_message_eventcallback_simulationended)	{
 	}
 
 	return retVal;

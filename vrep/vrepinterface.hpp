@@ -325,7 +325,7 @@ public:
 		vals[2] = quaternion.getZ();
 		vals[3] = quaternion.getW();
 
-		simSetObjectQuaternion(agentHandle, -1, vals);
+//		simSetObjectQuaternion(agentHandle, -1, vals);
 
 		State returnState;
 
