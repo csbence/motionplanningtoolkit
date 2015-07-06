@@ -5,7 +5,7 @@
 #$3 instance
 #$4 headless
 
-VREP="/Users/skiesel/gopath/src/github.com/skiesel/motionplanningtoolkit/dependencies/V-REP_PRO_EDU_V3_2_1_Mac/vrep.app/Contents/MacOS/vrep"
+VREP="/Users/bencecserna/Documents/Development/projects/motionplanningtoolkit/motionplanningtoolkit/dependencies/V-REP_PRO_EDU_V3_2_1_Mac/vrep.app/Contents/MacOS/vrep"
 
 if [ "$1" != "" ] && [ "$2" != "" ] && [ "$3" != "" ];
 then
