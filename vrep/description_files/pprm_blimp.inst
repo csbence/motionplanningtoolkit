@@ -1,4 +1,5 @@
-Scene File ? /Users/skiesel/gopath/src/github.com/skiesel/motionplanningtoolkit/vrep/scenes/pprm_blimp.ttt
+Scene File ? /Users/bencecserna/Documents/Development/projects/motionplanningtoolkit/motionplanningtoolkit/vrep/scenes/pprm_blimp.ttt
+#Scene File ? /Users/skiesel/gopath/src/github.com/skiesel/motionplanningtoolkit/vrep/scenes/pprm_blimp.ttt
 
 Agent Handle Name ? blimp_body
 Agent Collision Group Handle Name ? blimp_body

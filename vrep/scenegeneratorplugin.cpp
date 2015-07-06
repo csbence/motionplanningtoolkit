@@ -8,6 +8,8 @@
 #include "../utilities/instancefilemap.hpp"
 #include "../utilities/datafile.hpp"
 
+#include "positionsampler.hpp"
+
 #include <boost/thread/thread.hpp>
 
 #define VREP_DLLEXPORT extern "C"
@@ -81,24 +83,27 @@ VREP_DLLEXPORT unsigned char v_repStart(void* reservedPointer,int reservedInt) {
 			goal.goalPositionVars.push_back(vals[i]);
 		}
 
-
 		simGetObjectOrientation(goalHandle, -1, vals);
 		for(unsigned int i = 0; i < 3; ++i) {
 			goal.rootOrientation.push_back(vals[i]);
 			goal.goalOrientationVars.push_back(vals[i]);
 		}
 
-		if(args->value("Planner").compare("RRT") == 0) {
-			solveWithRRT(interface, args, start, goal);
-		} else if(args->value("Planner").compare("RRT Connect") == 0) {
-			solveWithRRTConnect(interface, args, start, goal);
-		} else if(args->value("Planner").compare("Plaku IROS 2014") == 0) {
-			solveWithPlaku(interface, args, start, goal);
-		} else {
-			fprintf(stderr, "unrecognized planner!");
-			exit(1);
-		}
-		
+		PositionSampler<VREPInterface, VREPInterface> positionSampler(interface, interface);
+
+		auto safeState = positionSampler.generateSafeState(start);
+
+//		if(args->value("Planner").compare("RRT") == 0) {
+//			solveWithRRT(interface, args, start, goal);
+//		} else if(args->value("Planner").compare("RRT Connect") == 0) {
+//			solveWithRRTConnect(interface, args, start, goal);
+//		} else if(args->value("Planner").compare("Plaku IROS 2014") == 0) {
+//			solveWithPlaku(interface, args, start, goal);
+//		} else {
+//			fprintf(stderr, "unrecognized planner!");
+//			exit(1);
+//		}
+//
 		dffooter(stdout);
 	});
 

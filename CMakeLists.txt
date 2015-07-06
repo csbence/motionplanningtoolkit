@@ -82,8 +82,6 @@ if(BUILDGRAPHICS)
 	endif(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 endif(BUILDGRAPHICS)
 
-
-
 ######### VREP Plugin ##########
 
 add_library(v_repExtskiesel SHARED dependencies/V-REP_PRO_EDU_V3_2_1_Mac/programming/common/v_repLib.cpp vrep/plugin.cpp)
@@ -99,6 +97,26 @@ ADD_CUSTOM_COMMAND(
 )
 
 target_link_libraries(v_repExtskiesel
+	${Boost_LIBRARIES}
+	${FCL_LIBRARIES}
+	${OMPL_LIBRARIES}
+)
+
+######### VREP Scene Generator Plugin ##########
+
+add_library(v_repExtSceneGenerator SHARED dependencies/V-REP_PRO_EDU_V3_2_1_Mac/programming/common/v_repLib.cpp vrep/scenegeneratorplugin.cpp)
+
+set_target_properties(v_repExtSceneGenerator PROPERTIES
+	COMPILE_DEFINITIONS "VREPPLUGIN")
+
+ADD_CUSTOM_COMMAND(
+	TARGET v_repExtSceneGenerator
+	POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -E copy ARGS ${CMAKE_BINARY_DIR}/libv_repExtSceneGenerator.dylib
+	${CMAKE_SOURCE_DIR}/dependencies/V-REP_PRO_EDU_V3_2_1_Mac/vrep.app/Contents/MacOS/
+)
+
+target_link_libraries(v_repExtSceneGenerator
 	${Boost_LIBRARIES}
 	${FCL_LIBRARIES}
 	${OMPL_LIBRARIES}

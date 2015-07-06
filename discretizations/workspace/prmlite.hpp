@@ -6,8 +6,8 @@
 
 #include "v_repLib.h"
 
-#include "../utilities/flannkdtreewrapper.hpp"
-#include "../utilities/datafile.hpp"
+#include "../../utilities/flannkdtreewrapper.hpp"
+#include "../../utilities/datafile.hpp"
 
 template <class Workspace, class Agent>
 class PRMLite {

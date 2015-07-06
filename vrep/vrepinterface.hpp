@@ -121,7 +121,8 @@ public:
 	};
 
 	VREPInterface(const InstanceFileMap &args) : simulatorBarrier(2) {
-		assert(simLoadScene(args.value("Scene File").c_str()) != -1);
+		const int loadSceneRetVal= simLoadScene(args.value("Scene File").c_str());
+		assert(loadSceneRetVal != -1);
 
 		std::string agentName = args.value("Agent Handle Name");
 		agentHandle = agentName == "EVERYTHING" ? sim_handle_all : simGetObjectHandle(agentName.c_str());
