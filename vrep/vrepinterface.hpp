@@ -84,12 +84,12 @@ public:
 
 	class Edge {
 	public:
-		Edge(const State &s) : start(s), end(s), controls(0), duration(0), safe(false) {}
+		Edge(const State &s) : start(s), end(s), parent(NULL), controls(0), duration(0), safe(false) {}
 
 		Edge(const State &start, const State &end, double cost, const std::vector<double> &controls, double duration, bool safe) : start(start),
 			end(end), cost(cost), treeIndex(0), controls(controls.begin(), controls.end()), duration(duration), safe(safe) {}
 
-		Edge(const Edge &e) : start(e.start), end(e.end), cost(e.cost), treeIndex(e.treeIndex), 
+		Edge(const Edge &e) : start(e.start), end(e.end), parent(e.parent), cost(e.cost), treeIndex(e.treeIndex), 
 			controls(e.controls.begin(), e.controls.end()), duration(e.duration), safe(e.safe) {}
 
 		Edge& operator=(const Edge& e) {
@@ -100,6 +100,7 @@ public:
 			controls = e.controls;
 			treeIndex = e.treeIndex;
 			safe = e.safe;
+			parent = e.parent;
 			return *this;
 		}
 
@@ -114,6 +115,7 @@ public:
 		void setPointIndex(int ptInd) { treeIndex = ptInd; }
 
 		State start, end;
+		const Edge* parent;
 		double cost, duration;
 		std::vector<double> controls;
 		int treeIndex;
@@ -300,12 +302,18 @@ public:
 		return State(vars);
 	}
 
-	State transformToState(const State& s, const fcl::Transform3f& transform, double radius) const {
+	Control controlFromVector(const std::vector<double> &controls) const {
+		return controls;
+	}
+
+	State transformToState(const State& s, const fcl::Transform3f& transform) const {
 		loadState(s);
 
 		simFloat vals[4];
 		const fcl::Vec3f &position = transform.getTranslation();
 		const fcl::Quaternion3f &quaternion = transform.getQuatRotation();
+
+
 
 		for(unsigned int i = 0; i < 3; ++i)
 			vals[i] = position[i];
@@ -357,6 +365,35 @@ public:
 		bool inBounds = stateInBounds(end);
 
 		return Edge(start, end, dt, getControlsFromThisEdge.controls, result.first, inBounds);
+	}
+
+	Edge steerWithControl(const State &start, const std::vector<double> controls, double dt) const {
+		Edge edge(start);
+		edge.safe = false;
+
+		loadState(start);
+
+		if(collision()) { return edge; }
+
+		unsigned int curControl = 0;
+		for(unsigned int i = 0; i < controllableVelocityJointHandles.size(); ++i) {
+			simSetJointTargetVelocity(controllableVelocityJointHandles[i], controls[curControl++]);
+		}
+
+		for(unsigned int i = 0; i < controllablePositionJointHandles.size(); ++i) {
+			simSetJointTargetPosition(controllablePositionJointHandles[i], controls[curControl++]);
+		}
+
+		std::pair<double, bool> result = startSimulation(dt);
+
+		if(result.second || collision()) { return edge; }
+
+		State end;
+		saveState(end);
+
+		bool inBounds = stateInBounds(end);
+
+		return Edge(start, end, dt, controls, result.first, inBounds);
 	}
 
 	Edge randomSteer(const State &start, double dt) const {
