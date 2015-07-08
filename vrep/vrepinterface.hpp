@@ -172,6 +172,35 @@ public:
 				workspaceBounds[which].second = std::stod(range);
 			}
 			i++;
+			std::cerr << "Original Workspace Bounds::  " << std::stod(range) << std::endl;
+		}
+
+		ranges = args.valueList("Workspace Start Bounds");
+		i = 0;
+		for(const std::string &range : ranges) {
+			int which = i / 2;
+			bool isMin = (i % 2) == 0;
+			if(isMin) {
+				startBounds.emplace_back();
+				startBounds[which].first = std::stod(range);
+			} else {
+				startBounds[which].second = std::stod(range);
+			}
+			i++;
+		}
+
+		ranges = args.valueList("Workspace Goal Bounds");
+		i = 0;
+		for(const std::string &range : ranges) {
+			int which = i / 2;
+			bool isMin = (i % 2) == 0;
+			if(isMin) {
+				goalBounds.emplace_back();
+				goalBounds[which].first = std::stod(range);
+			} else {
+				goalBounds[which].second = std::stod(range);
+			}
+			i++;
 		}
 
 		ranges = args.valueList("Sampling Ranges");
@@ -234,6 +263,13 @@ public:
 	//from the perspective of the environment
 	const WorkspaceBounds &getBounds() const {
 		return workspaceBounds;
+	}
+
+	const WorkspaceBounds &getStartBounds() const {
+		return startBounds;
+	}
+	const WorkspaceBounds &getGoalBounds() const {
+		return goalBounds;
 	}
 
 	bool safeEdge(const VREPInterface &agent, const Edge &edge, double dt) const {
@@ -313,8 +349,6 @@ public:
 		const fcl::Vec3f &position = transform.getTranslation();
 		const fcl::Quaternion3f &quaternion = transform.getQuatRotation();
 
-
-
 		for(unsigned int i = 0; i < 3; ++i)
 			vals[i] = position[i];
 
@@ -325,7 +359,7 @@ public:
 		vals[2] = quaternion.getZ();
 		vals[3] = quaternion.getW();
 
-//		simSetObjectQuaternion(agentHandle, -1, vals);
+		simSetObjectQuaternion(agentHandle, -1, vals);
 
 		State returnState;
 
@@ -624,7 +658,15 @@ public:
 		simulatorBarrier.count_down_and_wait(); // notify simulator is done
 	}
 
-	WorkspaceBounds samplingBounds, workspaceBounds;
+	simInt getEnvironmentCollisionHandle() const {
+		return collisionCheckAgainstThisGroup;
+	}
+
+	simInt getAgentHandle() const {
+		return agentHandle;
+	}
+
+	WorkspaceBounds samplingBounds, workspaceBounds, startBounds, goalBounds;
 	std::vector< std::pair<double, double> > controlBounds;
 	std::vector<double> goalPositionThresholds, goalOrientationThresholds;
 	int treeStateSize;

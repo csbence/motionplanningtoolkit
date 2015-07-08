@@ -6,6 +6,8 @@ Agent Collision Group Handle Name ? blimp_body
 Environment Collision Group Handle Name ? EverythingButRobot
 
 Workspace Bounds ? -2.5 2.5 -2.5 2.5 0 1
+Workspace Start Bounds ? -2.5 2.5 -2.5 -1.5 0 1
+Workspace Goal Bounds ? -2.5 2.5 1.5 2.5 0 1
 
 Controllable Velocity Joint Name List ? fake_throttle fake_lift
 Controllable Velocity Joint Ranges ? -0.25 0.25 -0.1 0.1
