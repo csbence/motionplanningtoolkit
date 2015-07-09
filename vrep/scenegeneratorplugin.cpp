@@ -28,7 +28,7 @@ simFloat start = -1, dt = 1;
 namespace {
 	const char *const pluginName = "SceneGenerator";
 	const float goalRegionSize[3] = {0.5, 0.5, 0.5};
-	const int numberOfInstances = 10;
+	const int numberOfInstances = 100;
 
 	PositionSampler<VREPInterface, VREPInterface> *positionSampler;
 	VREPInterface::State startState;
@@ -102,8 +102,8 @@ namespace {
 
 	void generateInstanceFiles() {
 
-		int i = 1;
-		while (i <= 10) {
+		int i = 0;
+		while (i < 100) {
 			const auto goalTransform = positionSampler->generateSafeGoalRegion(goalRegionHandle);
 			const auto startTransform = positionSampler->generateSafeStartState();
 
