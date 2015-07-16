@@ -92,7 +92,7 @@ public:
 
 		const bool equals(const State &s) const {
 			for(unsigned int i = 0; i < 3; ++i) {
-				if(fabs(stateVars[0] - s.stateVars[0]) > 0.000001) return false;
+				if(fabs(stateVars[i] - s.stateVars[i]) > 0.000001) return false;
 			}
 			return true;
 		}
@@ -194,6 +194,10 @@ public:
 		static const Dubins* dubins;
 	};
 
+	void updateBounds(const WorkspaceBounds &b) {
+		bounds = b;
+	}
+
 	StateVarRanges getStateVarRanges(const WorkspaceBounds& b) const {
 		StateVarRanges bounds(b.begin(), b.begin() + 2);
 		bounds.push_back(std::make_pair(-M_PI, M_PI));
@@ -236,12 +240,13 @@ public:
 		return Edge(start, State(vars[0], vars[1], vars[2]), path, cost);
 	}
 
-/*
 	Edge randomSteer(const State &start, double dt) const {
-		fprintf(stderr, "not implemented\n");
-		exit(1);
+		double x = ((double)rand() / (double)RAND_MAX) * (bounds[0].second - bounds[0].first) + bounds[0].second;
+		double y = ((double)rand() / (double)RAND_MAX) * (bounds[1].second - bounds[1].first) + bounds[1].second;
+		double theta = ((double)rand() / (double)RAND_MAX) * 2 * M_PI - M_PI;
+		State randomState(x, y, theta);
+		return steer(start, randomState, dt);
 	}
-*/
 
 	std::vector<const SimpleAgentMeshHandler*> getMeshes() const {
 		std::vector<const SimpleAgentMeshHandler*> meshes(1, &mesh);
@@ -781,6 +786,8 @@ private:
 	SimpleAgentMeshHandler mesh;
 
 	double turningRadius;
+
+	WorkspaceBounds bounds;
 };
 
 const Dubins* Dubins::Edge::dubins = NULL;

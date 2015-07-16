@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef WITHGRAPHICS
+
 #define GLEW_STATIC
 #include <GL/glew.h>
 
@@ -19,6 +21,7 @@
 #include <boost/thread/thread.hpp>
 
 #include "connexion_3d_mouse.hpp"
+#include "instancefilemap.hpp"
 
 class OpenGLWrapper {
 
@@ -32,7 +35,6 @@ class OpenGLWrapper {
 #else
 	GENBUFFERS glGenBuffers = (GENBUFFERS)glXGetProcAddress((const GLubyte *) "glGenBuffers");
 #endif
-
 
 	// Shader sources
 	const GLchar *vertexSource = "/Users/bencecserna/Documents/Development/projects/motionplanningtoolkit/motionplanningtoolkit/utilities/shaders/shader.vert";
@@ -67,7 +69,7 @@ public:
 		externalKeyboardCallback = keyboard;
 	}
 
-	void runWithCallback(std::function<void(void)> callback) {
+	void runWithCallback(std::function<void(void)> callback, const InstanceFileMap &args) {
 		glfwInit();
 
 		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -124,6 +126,18 @@ public:
 
 		Connexion3DMouse::createConnexion3DMouse();
 
+		if(args.exists("Zoom"))
+			zoom(1, stod(args.value("Zoom")));
+
+		if(args.exists("Rotate X"))
+			rotate(0, stod(args.value("Rotate X")));
+
+		if(args.exists("Rotate Y"))
+			rotate(1, stod(args.value("Rotate Y")));
+
+		if(args.exists("Rotate Z"))
+			rotate(2, stod(args.value("Rotate Z")));
+
 		while(!glfwWindowShouldClose(window)) {
 			glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 			glClearDepthf(1.0f);
@@ -151,11 +165,17 @@ public:
 			buildTransform();
 			glUniformMatrix4fv(transformInt, 1, true, transformMatrix);
 
+			drawAxes();
+
 			callback();
 
 			glfwSwapBuffers(window);
 			glfwPollEvents();
 			handle3DMouseEvents();
+
+			// std::cout << "waiting\n";
+			// std::string garbage;
+			// std::getline(std::cin, garbage);
 		}
 
 		Connexion3DMouse::destroyConnexion3DMouse();
@@ -215,6 +235,41 @@ public:
 		if(wrapper.isMouseClicked()) {
 			wrapper.setMousePosition(x, y);
 		}
+	}
+
+	void drawAxes() const {
+		drawLine(0,0,0,1,0,0,Color::Red());
+		drawLine(0,0,0,0,1,0,Color::Blue());
+		drawLine(0,0,0,0,0,1,Color::Green());
+	}
+
+	void drawLine(double x1, double y1, double z1, double x2, double y2, double z2, const Color &color) const {
+		const auto &identity = getIdentity();
+		std::vector<double> line;
+		line.push_back(x1);
+		line.push_back(y1);
+		line.push_back(z1);
+		line.push_back(1);
+		line.push_back(0);
+		line.push_back(0);
+		line.push_back(1);
+		line.push_back(1);
+		line.insert(line.end(), color.getColor().begin(), color.getColor().end());
+		line.insert(line.end(), identity.begin(), identity.end());
+
+
+		line.push_back(x2);
+		line.push_back(y2);
+		line.push_back(z2);
+		line.push_back(1);
+		line.push_back(0);
+		line.push_back(0);
+		line.push_back(1);
+		line.push_back(1);
+		line.insert(line.end(), color.getColor().begin(), color.getColor().end());
+		line.insert(line.end(), identity.begin(), identity.end());
+
+		drawLines(line);
 	}
 
 	void translate(int axis, double direction, double magnitude = 1) {
@@ -277,7 +332,7 @@ public:
 		mouseInfo.mouseButton = button;
 		mouseInfo.mouseState = action;
 		if(mouseInfo.mouseState == GLFW_RELEASE) {
-			mouseInfo.oldCoordIsGood = false;	
+			mouseInfo.oldCoordIsGood = false;
 		}
 	}
 
@@ -319,7 +374,7 @@ public:
 						double dx = fabs(x - mouseInfo.oldX);
 						double dy = fabs(y - mouseInfo.oldY);
 
-						if(dx >= dy) 
+						if(dx >= dy)
 							xRot += M_PI / 180 * ((x - mouseInfo.oldX > 0) ? 1 : -1);
 						else
 							yRot += M_PI / 180 * ((y - mouseInfo.oldY > 0) ? 1 : -1);
@@ -513,3 +568,5 @@ private:
 
 OpenGLWrapper *OpenGLWrapper::wrapperInstance = NULL;
 std::function<void(int)> OpenGLWrapper::externalKeyboardCallback([](int key){});
+
+#endif

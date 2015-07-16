@@ -17,12 +17,21 @@ public:
 			steeringDT = stod(args.value("Steering Delta t"));
 			collisionCheckDT = stod(args.value("Collision Check Delta t"));
 
+			maxExtensions = stod(args.value("RRTConnect Max Extensions"));
+
 			dfpair(stdout, "steering dt", "%g", steeringDT);
 			dfpair(stdout, "collision check dt", "%g", collisionCheckDT);
 		}
 
 
 	void query(const State &start, const State &goal, int iterationsAtATime = -1, bool firstInvocation = true) {
+		bool foundGoal = false;
+#ifdef WITHGRAPHICS
+		auto green = OpenGLWrapper::Color::Green();
+		start.draw(green);
+		agent.drawMesh(start);
+		goal.draw(green);
+#endif
 
 		if(agent.isGoal(start, goal)) {
 			fprintf(stderr, "found goal\n");
@@ -36,20 +45,32 @@ public:
 
 		unsigned int iterations = 0;
 
-		while(true) {
+		while(!foundGoal) {
 
 			auto treeSample = treeInterface.getTreeSample();
 			samplesGenerated++;
 
+#ifdef WITHGRAPHICS
+			samples.push_back(treeSample);
+#endif
+
 			auto edge = agent.randomSteer(treeSample, steeringDT);
 
-			while(workspace.safeEdge(agent, edge, collisionCheckDT)) {
+			unsigned int added = 0;
+
+			while(added < maxExtensions && workspace.safeEdge(agent, edge, collisionCheckDT)) {
+				added++;
 				edgesAdded++;
 				Edge *e = pool.construct(edge);
 				treeInterface.insertIntoTree(e);
 
+#ifdef WITHGRAPHICS
+			treeEdges.push_back(e);
+#endif
+
 				if(agent.isGoal(edge.end, goal)) {
 					fprintf(stderr, "found goal\n");
+					foundGoal = true;
 					break;
 				}
 
@@ -61,6 +82,27 @@ public:
 			++iterations;
 			if(iterationsAtATime > 0 && ++iterations > iterationsAtATime) break;
 		}
+
+#ifdef WITHGRAPHICS
+		for(const Edge* edge : treeEdges) {
+			edge->draw(OpenGLWrapper::Color::Red());
+		}
+
+		for(const State &sample : samples) {
+			sample.draw();
+		}
+
+		if(solution.size() > 0) {
+			auto red = OpenGLWrapper::Color::Red();
+			for(const Edge *edge : solution) {
+				edge->draw(red);
+			}
+			agent.drawSolution(solution);
+			// if(poseNumber >= solution.size() * 2) poseNumber = -1;
+			// if(poseNumber >= 0)
+			// 	agent.animateSolution(solution, poseNumber++);
+		}
+#endif
 
 #ifdef VREPPLUGIN
 	if(solution.size() > 0) {
@@ -86,8 +128,9 @@ private:
 	TreeInterface &treeInterface;
 	boost::object_pool<Edge> pool;
 	std::vector<const Edge*> solution;
+	std::vector<const Edge*> treeEdges;
 	std::vector<State> samples;
 	double solutionCost;
 	double steeringDT, collisionCheckDT;
-	unsigned int samplesGenerated, edgesAdded, edgesRejected;
+	unsigned int maxExtensions, samplesGenerated, edgesAdded, edgesRejected;
 };

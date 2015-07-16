@@ -20,15 +20,21 @@ public:
 	State getTreeSample() const {
 		auto sample = sampleConfiguration();
 		auto sampleEdge = Edge(sample);
-		typename NN::KNNResult result = nn.nearest(&sampleEdge);
+		typename NN::KNNResult result = nn.nearest(&sampleEdge, 0, 1);
 		return result.elements[0]->end;
+	}
+
+	Edge* getTreeEdge(const State& s) const {
+		auto edge = Edge(s);
+		typename NN::KNNResult result = nn.nearest(&edge);
+		return result.elements[0];	
 	}
 
 private:
 	State sampleConfiguration() const {
 		StateVars vars;
 		for(auto distribution : distributions) {
-			double v = distribution(generator);
+			double v = distribution(GlobalRandomGenerator);
 			vars.push_back(v);
 		}
 		return agent.buildState(vars);
@@ -40,5 +46,4 @@ private:
 	StateVarRanges stateVarDomains;
 
 	std::vector< std::uniform_real_distribution<double> > distributions;
-	mutable std::default_random_engine generator;
 };

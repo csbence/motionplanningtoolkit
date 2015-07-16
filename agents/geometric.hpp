@@ -8,17 +8,8 @@
 #include "../utilities/openglwrapper.hpp"
 #include "../utilities/instancefilemap.hpp"
 
-class Blimp {
+class Geometric {
 
-	enum LABELS {
-		X = 0,
-		Y = 1,
-		Z = 2,
-		THETA = 3,
-		V = 4,
-		PSI = 5,
-		VZ = 6,
-	};
 
 public:
 	typedef std::vector< std::pair<double, double> > WorkspaceBounds;
@@ -29,13 +20,8 @@ public:
 
 	class State {
 	public:
-		State() : stateVars(7) {}
-
-		State(double x, double y, double z, double theta) : stateVars(7) {
-			stateVars[X] = x;
-			stateVars[Y] = y;
-			stateVars[Z] = z;
-			stateVars[THETA] = theta;
+		State() : stateVars(7) {
+			stateVars[6] = 1;
 		}
 
 		State(const State &s) : stateVars(s.stateVars.begin(), s.stateVars.end()) {}
@@ -49,14 +35,14 @@ public:
 			return *this;
 		}
 
+		const StateVars& getStateVars() const { return stateVars; }
+
 		const bool equals(const State &s) const {
 			for(unsigned int i = 0; i < 7; ++i) {
 				if(fabs(stateVars[i] - s.stateVars[i]) > 0.000001) return false;
 			}
 			return true;
 		}
-
-		const StateVars& getStateVars() const { return stateVars; }
 
 		void print() const {
 			for(auto v : stateVars) {
@@ -67,39 +53,35 @@ public:
 
 #ifdef WITHGRAPHICS
 		std::vector<double> toOpenGLTransform() const {
-			std::vector<double> transform = OpenGLWrapper::getOpenGLWrapper().getIdentity();
+			std::vector<double> translation = OpenGLWrapper::getOpenGLWrapper().getIdentity();
+			translation[12] = stateVars[0];
+			translation[13] = stateVars[1];
+			translation[14] = stateVars[2];
 
-			double sinVal = sin(stateVars[THETA]);
-			double cosVal = cos(stateVars[THETA]);
+			// fcl::Quaternion3f quaternion(stateVars[3], stateVars[4], stateVars[5], stateVars[6]);
+			// fcl::Matrix3f rotationMatrix;
+			// quaternion.toRotation(rotationMatrix);
 
-			transform[0] = cosVal;
-			transform[1] = -sinVal;
-			transform[4] = sinVal;
-			transform[5] = cosVal;
+			// rotationMatrix = rotationMatrix.transpose();
 
-			transform[12] = stateVars[X];
-			transform[13] = stateVars[Y];
-			transform[14] = stateVars[Z];
+			// std::vector<double> rotation = OpenGLWrapper::getOpenGLWrapper().getIdentity();
+			// for(unsigned int i = 0; i < 9; i++) {
+			// 	rotation[i] = rotationMatrix(i % 3, i / 3);
+			// }
 
-			return transform;
+			// std::vector<double> transform(16);
+			// math::multiply(rotation, translation, transform);
+
+			// return transform;
+			return translation;
 		}
 #endif
 
 		fcl::Transform3f toFCLTransform() const {
-			fcl::Vec3f pose(stateVars[X], stateVars[Y], stateVars[Z]);
-
-			fcl::Matrix3f rotation;
-			rotation.setIdentity();
-
-			double sinVal = sin(stateVars[THETA]);
-			double cosVal = cos(stateVars[THETA]);
-
-			rotation(0,0) = cosVal;
-			rotation(1,0) = -sinVal;
-			rotation(0,1) = sinVal;
-			rotation(1,1) = cosVal;
-
-			return fcl::Transform3f(rotation, pose);
+			fcl::Vec3f pose(stateVars[0], stateVars[1], stateVars[2]);
+			fcl::Quaternion3f quaternion(stateVars[3], stateVars[4], stateVars[5], stateVars[6]);
+			quaternion = math::normalize(quaternion);
+			return fcl::Transform3f(quaternion, pose);
 		}
 
 		fcl::Transform3f getTransform() const {
@@ -129,25 +111,25 @@ public:
 
 	class Edge {
 	public:
-		Edge(const State &start) : start(start), end(start), cost(0), dt(0), a(0), w(0), z(0), treeIndex(0) {
+		Edge(const State &start) : start(start), end(start), cost(0), treeIndex(0) {
 			buildTreeVars();
 		}
-		Edge(const State &start, const State &end, double cost, double a, double w, double z) : start(start),
-			end(end), cost(cost), dt(cost), a(a), w(w), z(z), treeIndex(0) {
+		Edge(const State &start, const State &end, const fcl::Vec3f &translation, const fcl::Quaternion3f &rotation,
+			double dt) : start(start), translation(translation), rotation(rotation), dt(dt), cost(dt), treeIndex(0) {
 				buildTreeVars();
 			}
-		Edge(const Edge& e) : start(e.start), end(e.end), cost(e.cost), dt(e.dt), a(e.a), w(e.w), z(e.z), treeIndex(e.treeIndex) {
+		Edge(const Edge& e) : start(e.start), end(e.end), translation(e.translation), rotation(e.rotation),
+			dt(e.dt), cost(e.cost), treeIndex(e.treeIndex) {
 			buildTreeVars();
 		}
 
 		Edge& operator=(const Edge &e) {
 			this->start = e.start;
 			this->end = e.end;
-			this->cost = e.cost;
 			this->dt = e.dt;
-			this->a = e.a;
-			this->w = e.w;
-			this->z = e.z;
+			this->cost = e.cost;
+			this->translation = e.translation;
+			this->rotation = e.rotation;
 			this->parent = e.parent;
 			return *this;
 		}
@@ -156,7 +138,7 @@ public:
 			const auto& vars = end.getStateVars();
 			treeVars.resize(vars.size());
 			for(unsigned int i = 0; i < vars.size(); ++i) {
-				treeVars[i] = (Blimp::NormalizeStateVars[i].first + vars[i]) * Blimp::NormalizeStateVars[i].second;				
+				treeVars[i] = (Geometric::NormalizeStateVars[i].first + vars[i]) * Geometric::NormalizeStateVars[i].second;				
 			}
 		}
 
@@ -192,22 +174,14 @@ public:
 
 		Edge *parent;
 		State start, end;
-		double cost, dt, a, w, z;
+		fcl::Vec3f translation;
+		fcl::Quaternion3f rotation;
+		double dt, cost;
 		int treeIndex;
 		StateVars treeVars;
 	};
 
-	Blimp(const InstanceFileMap &args) : mesh(args.value("Agent Mesh")) {
-		blimpLength = stod(args.value("Blimp Length"));
-
-		minimumVelocity = stod(args.value("Minimum Velocity"));
-		maximumVelocity = stod(args.value("Maximum Velocity"));
-
-		minimumTurning = stod(args.value("Minimum Turning"));
-		maximumTurning = stod(args.value("Maximum Turning"));
-
-		minimumVelocityZ = stod(args.value("Minimum Velocity Z"));
-		maximumVelocityZ = stod(args.value("Maximum Velocity Z"));
+	Geometric(const InstanceFileMap &args) : mesh(args.value("Agent Mesh")) {
 
 		auto environmentBoundingBox = args.doubleList("Environment Bounding Box");
 
@@ -216,21 +190,13 @@ public:
 			double term2 = 1. / (environmentBoundingBox[i+1] - environmentBoundingBox[i]);
 			NormalizeStateVars.emplace_back(term1, term2);
 		}
-		
-		NormalizeStateVars.emplace_back(M_PI / 2., 1. / (2.*M_PI)); //theta
-		NormalizeStateVars.emplace_back(-minimumVelocity, 1. / (maximumVelocity - minimumVelocity)); //v
-		NormalizeStateVars.emplace_back(-minimumTurning, 1. / (maximumTurning - minimumTurning)); //psi
-		NormalizeStateVars.emplace_back(-minimumVelocityZ, 1. / (maximumVelocityZ - minimumVelocityZ)); //vz
+
+		NormalizeStateVars.emplace_back(0, 1);
+		NormalizeStateVars.emplace_back(0, 1);
+		NormalizeStateVars.emplace_back(0, 1);
+		NormalizeStateVars.emplace_back(0, 1);
 
 		integrationStepSize = stod(args.value("Integration Step Size"));
-
-		linearAccelerations = std::uniform_real_distribution<double>(stod(args.value("Minimum Forward Acceleration")), stod(args.value("Maximum Forward Acceleration")));
-		zLinearAccelerations = std::uniform_real_distribution<double>(stod(args.value("Minimum Z Acceleration")), stod(args.value("Maximum Z Acceleration")));
-		angularAccelerations = std::uniform_real_distribution<double>(stod(args.value("Minimum Angular Acceleration")), stod(args.value("Maximum Angular Acceleration")));
-
-		controlBounds.emplace_back(stod(args.value("Minimum Forward Acceleration")), stod(args.value("Maximum Forward Acceleration")));
-		controlBounds.emplace_back(stod(args.value("Minimum Z Acceleration")), stod(args.value("Maximum Z Acceleration")));
-		controlBounds.emplace_back(stod(args.value("Minimum Angular Acceleration")), stod(args.value("Maximum Angular Acceleration")));
 
 		boost::char_separator<char> sep(" ");
 		boost::tokenizer< boost::char_separator<char> > tokens(args.value("Goal Thresholds"), sep);
@@ -239,9 +205,7 @@ public:
 		}
 
 #ifdef WITHGRAPHICS
-		OpenGLWrapper::setExternalKeyboardCallback([&](int key){
-			this->keyboard(key);
-		});
+		OpenGLWrapper::setExternalKeyboardCallback([&](int key){});
 #endif
 	}
 
@@ -251,10 +215,10 @@ public:
 
 	StateVarRanges getStateVarRanges(const WorkspaceBounds& b) const {
 		StateVarRanges bounds(b.begin(), b.end());
-		bounds.emplace_back(0, 2*M_PI);
-		bounds.emplace_back(minimumVelocity, maximumVelocity);
-		bounds.emplace_back(minimumTurning, maximumTurning);
-		bounds.emplace_back(minimumVelocityZ, maximumVelocityZ);
+		bounds.emplace_back(0, 1);
+		bounds.emplace_back(0, 1);
+		bounds.emplace_back(0, 1);
+		bounds.emplace_back(0, 1);
 
 		return bounds;
 	}
@@ -268,64 +232,65 @@ public:
 	}
 
 	const std::vector< std::pair<double, double> >& getControlBounds() const {
+		fprintf(stderr, "Geometric::getControlBounds not implemented");
+		exit(0);
 		return controlBounds;
 	}
 
 	State transformToState(const State &s, const fcl::Transform3f &transform) const {
-		fcl::Quaternion3f orientation = transform.getQuatRotation();
-		fcl::Vec3f axis;
-		double theta;
-		orientation.toAxisAngle(axis, theta);
-		theta = (theta - 2 * M_PI * std::floor((theta + M_PI) / (2 * M_PI)));
-
 		fcl::Vec3f position = transform.getTranslation();
+		fcl::Quaternion3f orientation = transform.getQuatRotation();
+		StateVars vars(7);
+		vars[0] = position[0];
+		vars[1] = position[1];
+		vars[2] = position[2];
+		vars[3] = orientation.getW();
+		vars[4] = orientation.getX();
+		vars[5] = orientation.getY();
+		vars[6] = orientation.getZ();
 
-		return State(position[0], position[1], position[2], theta);
+		return State(vars);
 	}
 
 	bool isGoal(const State &state, const State &goal) const {
 		const StateVars &s = state.getStateVars();
 		const StateVars &g = goal.getStateVars();
 
-		return fabs(s[X] - g[X]) < goalThresholds[X] &&
-		       fabs(s[Y] - g[Y]) < goalThresholds[Y] &&
-		       fabs(s[Z] - g[Z]) < goalThresholds[Z];
+		return fabs(s[0] - g[0]) < goalThresholds[0] &&
+		       fabs(s[1] - g[1]) < goalThresholds[1] &&
+		       fabs(s[2] - g[2]) < goalThresholds[2];
 	}
 
 	Edge steerWithControl(const State &start, const Edge &getControlsFromThisEdge, double dt) const {
-		double a = getControlsFromThisEdge.a;
-		double w = getControlsFromThisEdge.w;
-		double z = getControlsFromThisEdge.z;
+		State end = doSteps(start, getControlsFromThisEdge.translation, getControlsFromThisEdge.rotation, dt);
 
-		State end = doSteps(start, a, w, z, dt);
-
-		return Edge(start, end, dt, a, w, z);
+		return Edge(start, end, getControlsFromThisEdge.translation, getControlsFromThisEdge.rotation, dt);
 	}
 
 	Edge steerWithControl(const State &start, const std::vector<double> controls, double dt) const {
 		/* Be careful about the order these are being passed in */
+		fcl::Vec3f translation(controls[0], controls[1], controls[2]);
+		fcl::Quaternion3f rotation(controls[3], controls[4], controls[5], controls[6]);
+		rotation = math::normalize(rotation);
 
-		double a = controls[0];
-		double z = controls[1];
-		double w = controls[2];
+		State end = doSteps(start, translation, rotation, dt);
 
-		State end = doSteps(start, a, w, z, dt);
-
-		return Edge(start, end, dt, a, w, z);
+		return Edge(start, end, translation, rotation, dt);
 	}
 
 	Edge steer(const State &start, const State &goal, double dt) const {
-		return randomSteer(start, dt);
+		fprintf(stderr, "Geometric::steer not implemented\n");
+		exit(0);
+		return Edge(start);
 	}
 
 	Edge randomSteer(const State &start, double dt) const {
-		double a = linearAccelerations(GlobalRandomGenerator);
-		double w = angularAccelerations(GlobalRandomGenerator);
-		double z = zLinearAccelerations(GlobalRandomGenerator);
+		fcl::Vec3f translation = math::randomPointInSphere();
+		fcl::Quaternion3f rotation = math::getRandomUnitQuaternion();
+		
+		State end = doSteps(start, translation, rotation, dt);
 
-		State end = doSteps(start, a, w, z, dt);
-
-		return Edge(start, end, dt, a, w, z);
+		return Edge(start, end, translation, rotation, dt);
 	}
 
 	std::vector<const SimpleAgentMeshHandler*> getMeshes() const {
@@ -336,24 +301,8 @@ public:
 	std::vector<fcl::Transform3f> getRepresentivePosesForLocation(const std::vector<double> &loc) const {
 		std::vector<fcl::Transform3f> poses;
 
-		fcl::Vec3f pose(loc[0], loc[1], loc[2]);
-
-		unsigned int rotations = 4;
-		double increment = M_PI / ((double)rotations * 2.);
-		fcl::Matrix3f rotation;
-		rotation.setIdentity();
-
-		for(unsigned int i = 0; i < rotations; ++i) {
-			double cosTheta = cos((double)i * increment);
-			double sinTheta = sin((double)i * increment);
-
-			rotation(0,0) = cosTheta;
-			rotation(1,0) = -sinTheta;
-			rotation(0,1) = sinTheta;
-			rotation(1,1) = cosTheta;
-
-			poses.emplace_back(rotation, pose);
-		}
+		fprintf(stderr, "Geometric::getRepresentivePosesForLocation not implemented\n");
+		exit(0);
 
 		return poses;
 	}
@@ -369,12 +318,8 @@ public:
 		retPoses.back().push_back(state.toFCLTransform());
 
 		for(unsigned int step = 0; step < steps; ++step) {
-			state = doSteps(edge.start, edge.a, edge.w, edge.z, dt * (double)step);
-
+			state = doSteps(edge.start, edge.translation, edge.rotation, dt * (double)step);
 			retPoses.emplace_back();
-
-			// drawMesh(state);
-
 			retPoses.back().push_back(state.toFCLTransform());
 		}
 
@@ -385,41 +330,10 @@ public:
 	}
 
 #ifdef WITHGRAPHICS
-	void keyboard(int key) {
-		double a = 0, w = 0, z = 0, dt = 0.1;
-
-		switch(key) {
-			case 'Q':
-				a = 1;
-				break;
-			case 'W':
-				w = 1;
-				break;
-			case 'E':
-				z = 1;
-				break;
-		}
-
-		const StateVars& vars = state.getStateVars();
-		StateVars newState(7);
-
-		newState[X] = vars[X];
-		newState[Y] = vars[Y];
-		newState[THETA] = vars[THETA];
-
-		newState[Z] = vars[Z];
-
-		newState[V] = vars[V] + a * dt;
-		newState[PSI] = vars[PSI] + w * dt;
-		newState[VZ] = vars[VZ] + z * dt;
-
-		state = State(newState);
-	}
-
 	void draw() const {
 		double dt = 0.1;
 
-		state = doSteps(state, 0, 0, 0, dt, true);
+		state = doSteps(state, fcl::Vec3f(), fcl::Quaternion3f(), dt);
 
 		auto transform = state.toOpenGLTransform();
 
@@ -430,7 +344,6 @@ public:
 		auto transform = s.toOpenGLTransform();
 		mesh.draw(color, transform);
 	}
-
 
 	void drawMesh(const fcl::Transform3f &transform) const {
 		drawMesh(transform, color);
@@ -452,7 +365,6 @@ public:
 		glTransform[9] = orientation(2,1);
 		glTransform[10] = orientation(2,2);
 
-
 		glTransform[12] = translation[0];
 		glTransform[13] = translation[1];
 		glTransform[14] = translation[2];
@@ -473,7 +385,7 @@ public:
 				mesh.draw(color, transform);
 				state.draw(OpenGLWrapper::Color::Green());
 
-				state = doSteps(state, edge->a, edge->w, edge->z, dt, true);
+				state = doSteps(state, edge->translation, edge->rotation, dt);
 			}
 		}
 	}
@@ -491,54 +403,41 @@ public:
 
 // private:
 
-	State doSteps(const State& s, double a, double w, double z, double dt, bool ignoreIntegrationStepSize = false) const {
+	State doSteps(const State& s, const fcl::Vec3f &translation, const fcl::Quaternion3f &rotation, double dt) const {
 		const StateVars& vars = s.getStateVars();
 		StateVars newState = vars;
 
-		unsigned int steps = ignoreIntegrationStepSize ? 0 : dt / integrationStepSize;
+		newState[0] += translation[0] * dt;
+		newState[1] += translation[1] * dt;
+		newState[2] += translation[2] * dt;
 
-		double leftOver = ignoreIntegrationStepSize ? dt : dt - ((double)steps * integrationStepSize);
+		fcl::Quaternion3f baseQuaternion(newState[3], newState[4], newState[5], newState[6]);
+		fcl::Quaternion3f rot = rotation;
 
-		assert(leftOver >= 0);
+		if(dt > 1) {
+			int steps = dt;
+			dt = dt - steps;
 
-		double stepSize = integrationStepSize;
-
-		for(unsigned int i = 0; i < steps+1; ++i) {
-
-			if(i == steps) {
-				stepSize = leftOver;
+			for(unsigned int i = 0; i < steps; ++i) {
+				baseQuaternion = rot * baseQuaternion;
+				baseQuaternion = math::normalize(baseQuaternion);
 			}
-
-			newState[X] = newState[X] + cos(newState[THETA]) * newState[V] * stepSize;
-			newState[Y] = newState[Y] + sin(newState[THETA]) * newState[V] * stepSize;
-			newState[THETA] = normalizeTheta(newState[THETA] + newState[V] * tan(newState[PSI]) / blimpLength);
-
-			newState[Z] = newState[Z] + newState[VZ] * dt;
-
-			newState[V] = newState[V] + a * stepSize;
-			newState[PSI] = newState[PSI] + w * stepSize;
-			newState[VZ] = newState[VZ] + z * stepSize;
-
-			if(newState[V] > maximumVelocity) { newState[V] = maximumVelocity; }
-			else if(newState[V] < minimumVelocity ) { newState[V] = minimumVelocity; }
-
-			if(newState[PSI] > maximumTurning) { newState[PSI] = maximumTurning; }
-			else if(newState[PSI] < minimumTurning) { newState[PSI] = minimumTurning; }
-
-			if(newState[VZ] > maximumVelocityZ) { newState[VZ] = maximumVelocityZ; }
-			else if(newState[VZ] < minimumVelocityZ ) { newState[VZ] = minimumVelocityZ; }
 		}
+
+		rot = math::slerp(fcl::Quaternion3f(), rot, dt);
+		baseQuaternion = rot * baseQuaternion;
+		baseQuaternion = math::normalize(baseQuaternion);
+
+		newState[3] = baseQuaternion.getW();
+		newState[4] = baseQuaternion.getX();
+		newState[5] = baseQuaternion.getY();
+		newState[6] = baseQuaternion.getZ();
 
 		return State(newState);
 	}
 
-	double normalizeTheta(double t) const {
-		return (t - 2 * M_PI * std::floor((t + M_PI) / (2 * M_PI)));
-	}
-
 	SimpleAgentMeshHandler mesh;
-	double blimpLength, minimumVelocity, maximumVelocity, minimumTurning, maximumTurning, minimumVelocityZ, maximumVelocityZ, integrationStepSize;
-	mutable std::uniform_real_distribution<double> linearAccelerations, zLinearAccelerations, angularAccelerations;
+	double integrationStepSize;
 
 	std::vector< std::pair<double, double> > controlBounds;
 
@@ -551,4 +450,4 @@ public:
 	static std::vector<std::pair<double, double>> NormalizeStateVars;
 };
 
-std::vector<std::pair<double, double>> Blimp::NormalizeStateVars;
+std::vector<std::pair<double, double>> Geometric::NormalizeStateVars;

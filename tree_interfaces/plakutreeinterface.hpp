@@ -4,6 +4,9 @@
 #include <unordered_set>
 #include "../utilities/flannkdtreewrapper.hpp"
 #include "../utilities/heap.hpp"
+#include "../discretizations/workspace/lazyprmlite.hpp"
+
+template <class Workspace, class Agent, class Discretization> class DijkstraRunner;
 
 template <class Workspace, class Agent, class Discretization>
 class PlakuTreeInterface {
@@ -12,11 +15,11 @@ class PlakuTreeInterface {
 	typedef typename Agent::Edge Edge;
 
 	typedef flann::KDTreeSingleIndexParams KDTreeType;
-	typedef FLANN_KDTreeWrapper<KDTreeType, flann::L2<double>, VREPInterface::Edge> KDTree;
-	typedef UniformSampler<Workspace, Agent, KDTree> UniformSampler;
+	typedef FLANN_KDTreeWrapper<KDTreeType, flann::L2<double>, typename Agent::Edge> KDTree;
+	typedef UniformSampler<Workspace, Agent, KDTree> UniformSamplerT;
 
 	struct Region {
-		Region(unsigned int id, const Agent& agent) : heapIndex(std::numeric_limits<unsigned int>::max()), id(id), numSelections(0), heuristic(std::numeric_limits<double>::infinity()), weight(0), onOpen(false) {
+		Region(unsigned int id, const Agent& agent) : heapIndex(std::numeric_limits<unsigned int>::max()), id(id), numSelections(0), heuristic(std::numeric_limits<double>::infinity()), weight(0), onOpen(false){
 			KDTreeType kdtreeType;
 			edgesInRegion = new KDTree(kdtreeType, agent.getTreeStateSize());
 		}
@@ -31,39 +34,75 @@ class PlakuTreeInterface {
 			regionPath.push_back(id);
 		}
 
+		void addPathCandidate(double heur, const std::vector<unsigned int> &path) {
+			if(heur < heuristic) {
+				bestIndex = heuristicCandidates.size();
+				heuristic = heur;
+				regionPath = path;
+				regionPath.push_back(id);
+			}
+			heuristicCandidates.push_back(heur);
+			regionPathCandidates.emplace_back(path.begin(), path.end());
+			regionPathCandidates.back().emplace_back(id);
+		}
+
+		void currentInvalidFindNextBestPath() {
+			regionPathCandidates.erase(regionPathCandidates.begin() + bestIndex);
+			heuristicCandidates.erase(heuristicCandidates.begin() + bestIndex);
+
+			if(heuristicCandidates.size() == 0) {
+				bestIndex = 0;
+				heuristic = std::numeric_limits<double>::infinity();
+				regionPath.resize(0);
+				return;
+			}
+
+			heuristic = std::numeric_limits<double>::infinity();
+			for(unsigned int i = 0; i < heuristicCandidates.size(); ++i) {
+				if(heuristicCandidates[i] < heuristic) {
+					heuristic = heuristicCandidates[i];
+					bestIndex = i;
+				}
+			}
+			regionPath = regionPathCandidates[bestIndex];
+		}
+
 		void selected(double alpha) {
 			numSelections++;
 			weight = pow(alpha, numSelections) / (std::numeric_limits<double>::epsilon() + heuristic);
 		}
 
-		bool operator<(const Region &r) const {
-			return weight < r.weight;
-		}
-
-		unsigned int getRandomRegionAlongPathToGoal(std::uniform_real_distribution<double> &distribution,
-			std::default_random_engine &generator) const {
-			unsigned int randomIndex = (unsigned int)(distribution(generator) * regionPath.size());
+		unsigned int getRandomRegionAlongPathToGoal(std::uniform_real_distribution<double> &distribution) const {
+			unsigned int randomIndex = (unsigned int)(distribution(GlobalRandomGenerator) * regionPath.size());
 			return regionPath[randomIndex];
 		}
 
 		State getNearestStateInRegion(const State& s) const {
 			Edge e(s);
-			auto res = edgesInRegion->nearest(&e);
+			auto res = edgesInRegion->nearest(&e, 0, 1);
 			assert(res.elements.size() > 0);
 			return res.elements[0]->end;
 		}
 
 		/* used for initial heuristic computation */
 		unsigned int heapIndex;
-		int sort(const Region* r) const { return heuristic - r->heuristic; }
+		int sort(const Region* r) const { return (heuristic - r->heuristic) > 0 ? -1 : 1; }
 		unsigned int getHeapIndex() const { return heapIndex; }
 		void setHeapIndex(unsigned int i) { heapIndex = i; }
 		void updateRegionPath(const std::vector<unsigned int> &rp) { regionPath = rp; }
 
+		static bool HeapCompare(const Region *r1, const Region *r2) {
+			return r1->weight < r2->weight;
+		}
 
 		unsigned int id, numSelections;
 		double heuristic, weight;
 		std::vector<unsigned int> regionPath;
+
+		unsigned int bestIndex;
+		std::vector<double> heuristicCandidates;
+		std::vector<std::vector<unsigned int>> regionPathCandidates;
+
 		bool onOpen;
 		KDTree *edgesInRegion;
 	};
@@ -72,14 +111,14 @@ public:
 	PlakuTreeInterface(const Workspace &workspace, const Agent &agent, Discretization& discretization,
 		const State& start, const State& goal, double alpha, double b, double stateRadius) : agent(agent), workspace(workspace),
 		discretization(discretization), startRegionId(discretization.getCellId(start)),
-		goalRegionId(discretization.getCellId(goal)), alpha(alpha), b(b), stateRadius(stateRadius) {
+		goalRegionId(discretization.getCellId(goal)), activeRegion(NULL), alpha(alpha), b(b), stateRadius(stateRadius) {
 
 		assert(alpha > 0 && alpha < 1);
 
 		KDTreeType kdtreeType;
 		uniformSamplerBackingKDTree = new KDTree(kdtreeType, agent.getTreeStateSize());
 
-		uniformSampler = new UniformSampler(workspace, agent, *uniformSamplerBackingKDTree);
+		uniformSampler = new UniformSamplerT(workspace, agent, *uniformSamplerBackingKDTree);
 
 		unsigned int regionCount = discretization.getCellCount();
 		regions.reserve(regionCount);
@@ -106,9 +145,6 @@ public:
 				}
 			}
 		}
-
-		regionHeap.push_back(regions[startRegionId]);
-		regions[startRegionId]->onOpen = true;
 	}
 
 	~PlakuTreeInterface() {
@@ -131,24 +167,32 @@ public:
 			colorLookup[i] = getColor(min, max, regions[i]->heuristic);
 		}
 
-		discretization.draw(true, true, colorLookup);
+		discretization.draw(true, false, colorLookup);
 	}
 
 	State getTreeSample() {
 		if(activeRegion != NULL) {
 			activeRegion->selected(alpha);
 
-			regionHeap.push_back(activeRegion);
-			std::push_heap(regionHeap.begin(), regionHeap.end());
+			if(!activeRegion->onOpen) {
+				regionHeap.push_back(activeRegion);
+				std::push_heap(regionHeap.begin(), regionHeap.end(), Region::HeapCompare);
+				activeRegion->onOpen = true;
+			}
 		}
 
-		if(distribution(generator) < b) {
+		if(distribution(GlobalRandomGenerator) < b) {
+			assert(!regionHeap.empty());
+
 			activeRegion = regionHeap.front();
-			std::pop_heap(regionHeap.begin(), regionHeap.end());
+			std::pop_heap(regionHeap.begin(), regionHeap.end(), Region::HeapCompare);
 			regionHeap.pop_back();
 
-			unsigned int regionAlongPath = activeRegion->getRandomRegionAlongPathToGoal(distribution, generator);
+			activeRegion->onOpen = false;
+
+			unsigned int regionAlongPath = activeRegion->getRandomRegionAlongPathToGoal(distribution);
 			State p = discretization.getRandomStateNearRegionCenter(regionAlongPath, stateRadius);
+
 			return activeRegion->getNearestStateInRegion(p);
 		} else {
 			return uniformSampler->getTreeSample();
@@ -157,9 +201,10 @@ public:
 
 	void insertIntoTree(Edge* edge) {
 		unsigned int newCellId = discretization.getCellId(edge->end);
+
 		if(!regions[newCellId]->onOpen) {
 			regionHeap.push_back(regions[newCellId]);
-			std::push_heap(regionHeap.begin(), regionHeap.end());
+			std::push_heap(regionHeap.begin(), regionHeap.end(), Region::HeapCompare);
 			regions[newCellId]->onOpen = true;
 		}
 
@@ -167,24 +212,35 @@ public:
 		uniformSamplerBackingKDTree->insertPoint(edge);
 	}
 
+	Edge* getTreeEdge(const State& s) const {
+		fatal("Not implemented: PlakuTreeInterface::getTreeEdge");
+		return NULL;
+	}
+
 private:
+	void dijkstra(Region *region) {
+		dijkstraRunner.dijkstra(*this, region);
+	}
+
 	std::vector<double> getColor(double min, double max, double value) const {
 		std::vector<double> color(3);
 
-		value = ((value - min) / (max - min)) * 510;
+		value = ((value - min) / (max - min)) * 765;
 
-		color[0] = 0;
-		color[1] = 255;
-		color[2] = 0;
-		
-		if(value >= 255) {
+		if(value < 255) {
+			color[0] = 0;
+			color[1] = value / 2;
+			color[2] = 255 - value;
+		} else if(value < 510) {
+			double relVal = value - 255;
+			color[0] = relVal;
+			color[1] = (relVal + 255) / 2;
+			color[2] = 0;
+		} else {
+			double relVal = value - 510;
 			color[0] = 255;
-			value -= 255;
-			color[1] -= value;
-			if(color[1] < 0) color[1] = 0;
-		}
-		else {
-			color[0] += value;
+			color[1] = 255 - relVal;
+			color[2] = 0;
 		}
 
 		for(unsigned int i = 0; i < 3; ++i) {
@@ -194,57 +250,11 @@ private:
 		return color;
 	}
 
-
-	struct DijkstraSearchNode {
-		DijkstraSearchNode(unsigned int id, double cost) : id(id), cost(cost) {
-			path.push_back(id);
-		}
-
-		DijkstraSearchNode(unsigned int id, double cost, const std::vector<unsigned int> &p) :
-			id(id), cost(cost), path(p.begin(), p.end()) {
-			path.push_back(id);
-		}
-
-		bool operator<(const DijkstraSearchNode &dsn) const {
-			return cost > dsn.cost;
-		}
-
-		unsigned int id;
-		double cost;
-		std::vector<unsigned int> path;
-	};
-
-	void dijkstra(Region *region) {
-		InPlaceBinaryHeap<Region> open;
-		region->setHeuristicAndPath(0, std::vector<unsigned int>());
-		open.push(region);
-
-		while(!open.isEmpty()) {
-			Region *current = open.pop();
-
-			std::vector<unsigned int> kids = discretization.getNeighboringCells(current->id);
-			for(unsigned int kid : kids) {
-				double newHeuristic = current->heuristic + discretization.getEdgeCostBetweenCells(current->id, kid);
-				Region *kidPtr = regions[kid];
-
-				if(newHeuristic < kidPtr->heuristic) {
-					kidPtr->setHeuristicAndPath(newHeuristic, current->regionPath);
-
-					if(open.inHeap(kidPtr)) {
-						open.siftFromItem(kidPtr);
-					} else {
-						open.push(kidPtr);
-					}
-				}
-			}
-		}
-	}
-
 	const Workspace &workspace;
 	const Agent &agent;
-	const Discretization &discretization;
-	
-	UniformSampler *uniformSampler;
+	Discretization &discretization;
+
+	UniformSamplerT *uniformSampler;
 	KDTree *uniformSamplerBackingKDTree;
 
 	unsigned int startRegionId, goalRegionId;
@@ -253,5 +263,90 @@ private:
 
 	double alpha, b, stateRadius;
 	std::uniform_real_distribution<double> distribution;
-	mutable std::default_random_engine generator;
+
+
+
+	/* This is ugly, but I think slightly better than the alternatives */
+	template<class W, class A, class D>
+	class DijkstraRunner {
+		typedef PlakuTreeInterface<W, A, D> TheBoss;
+		typedef typename TheBoss::Region Region;
+	public:
+		void dijkstra(TheBoss& theBoss, Region *region) {
+			InPlaceBinaryHeap<Region> open;
+			region->setHeuristicAndPath(0, std::vector<unsigned int>());
+			open.push(region);
+
+			while(!open.isEmpty()) {
+				Region *current = open.pop();
+
+				std::vector<unsigned int> kids = theBoss.discretization.getNeighboringCells(current->id);
+				for(unsigned int kid : kids) {
+					double newHeuristic = current->heuristic + theBoss.discretization.getEdgeCostBetweenCells(current->id, kid);
+					Region *kidPtr = theBoss.regions[kid];
+
+					if(newHeuristic < kidPtr->heuristic) {
+						kidPtr->setHeuristicAndPath(newHeuristic, current->regionPath);
+
+						if(open.inHeap(kidPtr)) {
+							open.siftFromItem(kidPtr);
+						} else {
+							open.push(kidPtr);
+						}
+					}
+				}
+			}
+		}
+	};
+
+	template<class W, class A>
+	class DijkstraRunner<W, A, LazyPRMLite<Workspace, Agent> > {
+		typedef PlakuTreeInterface<Workspace, Agent, LazyPRMLite<Workspace, Agent> > TheBoss;
+		typedef typename TheBoss::Region Region;
+	public:
+		void dijkstra(TheBoss& theBoss, Region *region) {
+			InPlaceBinaryHeap<Region> open;
+			region->setHeuristicAndPath(0, std::vector<unsigned int>());
+			open.push(region);
+
+			while(!open.isEmpty()) {
+				Region *current = open.peek();
+
+				unsigned int pathLength = current->regionPath.size();
+
+				if(pathLength > 2 && !theBoss.discretization.isValidEdge(current->regionPath[pathLength-1], current->regionPath[pathLength-2])) {
+					current->currentInvalidFindNextBestPath();
+					if(current->regionPath.size() > 0) {
+						open.siftFromItem(current);
+					} else {
+						open.pop();
+					}
+					continue;
+				}
+
+				current = open.pop();
+
+				std::vector<unsigned int> kids = theBoss.discretization.getNeighboringCells(current->id);
+				for(unsigned int kid : kids) {
+					double newHeuristic = current->heuristic + theBoss.discretization.getEdgeCostBetweenCells(current->id, kid);
+					Region *kidPtr = theBoss.regions[kid];
+					double oldHeuristic = kidPtr->heuristic;
+					kidPtr->addPathCandidate(newHeuristic, current->regionPath);
+					if(newHeuristic < oldHeuristic) {
+						if(open.inHeap(kidPtr)) {
+							open.siftFromItem(kidPtr);
+						} else {
+							open.push(kidPtr);
+						}
+					}
+				}
+			}
+
+			// Get the edge checks to print
+			theBoss.discretization.dfPairs();
+		}
+	};
+
+	friend class DijkstraRunner<Workspace, Agent, Discretization>;
+	DijkstraRunner<Workspace, Agent, Discretization> dijkstraRunner;
 };
