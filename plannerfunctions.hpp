@@ -1,4 +1,46 @@
+#pragma once
+
+#include "workspaces/planarlinkage.hpp"
+
 unsigned int GraphicsIterations = 1000;
+
+template<class Workspace, class Agent>
+void go_TEST(const InstanceFileMap& args, const Agent& agent, const Workspace &workspace,
+			const typename Agent::State &start, const typename Agent::State &goal) {
+
+	dfpair(stdout, "planner", "%s", "TEST");
+	// typedef flann::KDTreeSingleIndexParams KDTreeType;
+	typedef flann::KDTreeIndexParams KDTreeType;
+	typedef FLANN_KDTreeWrapper<KDTreeType, flann::L2<double>, typename Agent::Edge> KDTree;
+	typedef UniformSampler<Workspace, Agent, KDTree> Sampler;
+	typedef TreeInterface<Agent, KDTree, Sampler> TreeInterface;
+	typedef RRT<Workspace, Agent, TreeInterface> Planner;
+
+/* planner config */
+
+	KDTreeType kdtreeType(3);
+	KDTree kdtree(kdtreeType, agent.getTreeStateSize());
+	Sampler sampler(workspace, agent, kdtree);
+	TreeInterface treeInterface(kdtree, sampler);
+	Planner planner(workspace, agent, treeInterface, args);
+
+#ifdef WITHGRAPHICS
+	bool firstInvocation = true;
+	auto lambda = [&](){
+		start.draw();
+//		workspace.draw();
+//		agent.draw();
+//		agent.drawMesh(start);
+//		agent.drawMesh(goal);
+//		planner.query(start, goal, GraphicsIterations, firstInvocation);
+//		firstInvocation = false;
+	};
+	OpenGLWrapper::getOpenGLWrapper().runWithCallback(lambda, args);
+#else
+	planner.query(start, goal);
+	planner.dfpairs();
+#endif
+}
 
 template<class Workspace, class Agent>
 void go_RRT(const InstanceFileMap& args, const Agent& agent, const Workspace &workspace,
@@ -142,6 +184,8 @@ void go(const InstanceFileMap& args, const Workspace &workspace, const Agent &ag
 		go_PPRM<Workspace, Agent>(args, agent, workspace, start, goal);
 	} else if(planner.compare("KPIECE") == 0) {
 		go_KPIECE<Workspace, Agent>(args, agent, workspace, start, goal);
+	} else if(planner.compare("TEST") == 0) {
+		go_TEST<Workspace, Agent>(args, agent, workspace, start, goal);
 	} else {
 		fprintf(stderr, "unreocognized planner: %s\n", planner.c_str());
 	}
@@ -229,4 +273,21 @@ void geometric(const InstanceFileMap& args) {
 	Agent::State goal(goalPosition);
 
 	go<Workspace, Agent>(args, workspace, agent, start, goal);
+}
+
+void planarLinkage(const InstanceFileMap& args) {
+	typedef PlanarLinkage Agent;
+	typedef PlanarLinkage Workspace;
+
+	PlanarLinkage planarLinkage(args);
+
+	/* start and goal states */
+
+	auto startPositionVars = args.doubleList("Agent Start Position");
+	auto goalPositionVars = args.doubleList("Agent Goal Position");
+
+	Agent::State start(startPositionVars);
+	Agent::State goal(goalPositionVars);
+
+	go<Workspace, Agent>(args, planarLinkage, planarLinkage, start, goal);
 }
