@@ -171,6 +171,7 @@ private:
 class PlanarLinkage {
 public:
 	typedef std::vector<double> StateVars;
+	typedef std::vector<double> Control;
 
 	typedef std::vector<std::pair<double, double> > WorkspaceBounds;
 	typedef std::vector<std::pair<double, double> > StateVarRanges;
@@ -209,7 +210,7 @@ public:
 			fprintf(stderr, "\n");
 		}
 
-		bool move(std::vector<double> control) {
+		bool move(Control control) {
 			const int numberOfLinks = links.size();
 			assert(control.size() == numberOfLinks);
 
@@ -264,13 +265,20 @@ public:
 		}
 
 #ifdef WITHGRAPHICS
+
 		void draw(const OpenGLWrapper::Color &color = OpenGLWrapper::Color()) const {
 			for (Link link : links) {
 				link.draw(color);
 			}
 			const auto &identity = OpenGLWrapper::getOpenGLWrapper().getIdentity();
 		}
+
 #endif
+
+
+		fcl::Transform3f getTransform() const {
+			return fcl::Transform3f();
+		}
 
 	private:
 		StateVars stateVars;
@@ -313,6 +321,9 @@ public:
 			end.print();
 		}
 
+		void draw(const OpenGLWrapper::Color &color = OpenGLWrapper::Color()) const {
+		}
+
 		/* needed for being inserted into NN datastructure */
 		const StateVars &getTreeStateVars() const { return end.getStateVars(); }
 
@@ -323,6 +334,8 @@ public:
 		State start, end;
 		double cost, duration;
 		int treeIndex;
+		Edge *parent;
+
 	};
 
 	PlanarLinkage(const InstanceFileMap &args) : workspaceBounds(3) {
@@ -342,8 +355,6 @@ public:
 		return 3;
 	}
 
-	void draw() {
-	}
 
 	StateVarRanges getStateVarRanges(const WorkspaceBounds &bounds) const {
 		return bounds;
@@ -373,8 +384,38 @@ public:
 		return Edge(start, buildState(stateVars), sum, controls, max);
 	}
 
+	Edge steerWithControl(const State &start, const Edge &getControlsFromThisEdge, double dt) const {
+	}
+
+	Edge steerWithControl(const State &start, const std::vector<double> controls, double dt) const {
+	}
+
 	State buildState(const StateVars &stateVars) const {
 		return State(stateVars);
+	}
+
+	void drawMesh() {
+	}
+
+	void drawMesh(const State &s) const {
+	}
+
+	void drawMesh(const fcl::Transform3f &transform, const OpenGLWrapper::Color &color = OpenGLWrapper::Color()) const {
+	}
+
+	void drawSolution(const fcl::Transform3f &transform, const OpenGLWrapper::Color &color = OpenGLWrapper::Color()) const {
+	}
+
+	void drawSolution(const std::vector<const Edge *> &solution, double dt = std::numeric_limits<
+			double>::infinity()) const {
+	}
+
+	WorkspaceBounds getControlBounds() const {
+		return workspaceBounds;
+	}
+
+	Control controlFromVector(const std::vector<double> &controls) const {
+		return controls;
 	}
 
 	/*** Workspace interface ***/
@@ -384,6 +425,17 @@ public:
 
 	bool safeEdge(const PlanarLinkage &agent, const Edge &edge, double dt, bool checkSelfCollision = false) const {
 
+	}
+
+	bool safePose(const PlanarLinkage &agent, const fcl::Transform3f &pose, const State &state = State()) const {
+
+	}
+
+	bool safePoses(const PlanarLinkage &agent, const std::vector<fcl::Transform3f> &poses, const State &state = State()) const {
+
+	}
+
+	void draw() const {
 	}
 
 private:
