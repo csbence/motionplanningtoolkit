@@ -42,7 +42,7 @@ public:
 
 	class Color {
 	public:
-		Color(double r = 1, double g = 1, double b = 1, double a = 1) : color(4) {
+		checkColor(double r = 1, double g = 1, double b = 1, double a = 1) : color(4) {
 			color[0] = r;
 			color[1] = g;
 			color[2] = b;
