@@ -23,6 +23,10 @@ namespace Planar {
 
 		PlanarVector &operator=(PlanarVector &&) = default;
 
+		bool operator==(PlanarVector &rhs) {
+			return x == rhs.x && y == rhs.y;
+		}
+
 		double x, y;
 	};
 
@@ -42,7 +46,7 @@ namespace Planar {
 																		  end(end) {
 		}
 
-		enum class IntersectResult { PARALLEL, COINCIDENT, NOT_INTERESECTING, INTERESECTING };
+		enum class IntersectResult { PARALLEL, COINCIDENT, NOT_INTERESECTING, INTERESECTING, OVERLAPPING };
 
 		IntersectResult intersect(const LineSegment &segment, PlanarVector &intersection) {
 			double denom = ((segment.end.y - segment.begin.y) * (end.x - begin.x)) -
@@ -56,8 +60,20 @@ namespace Planar {
 
 			if (denom == 0.0f) {
 				if (numerA == 0.0f && numberB == 0.0f) {
-					return IntersectResult::COINCIDENT;
+					// The lines are coincident. Check if the segments are overlapping or not.
+					// It is sufficient to check only one dimension, since the points are on the same line.
+
+					double localMin = std::min(begin.x, end.x);
+					double localMax = std::max(begin.x, end.x);
+
+					double segmentMin = std::min(segment.begin.x, segment.end.x);
+					double segmentMax = std::max(segment.begin.x, segment.end.x);
+
+					return (localMax <= segmentMin || segmentMax <= localMin) ? IntersectResult::PARALLEL
+																			  : IntersectResult::OVERLAPPING;
+//					return IntersectResult::COINCIDENT;
 				}
+
 				return IntersectResult::PARALLEL;
 			}
 
@@ -80,39 +96,25 @@ namespace Planar {
 		void draw(const OpenGLWrapper::Color &color = OpenGLWrapper::Color()) const {
 			const auto &identity = OpenGLWrapper::getOpenGLWrapper().getIdentity();
 
-//			std::vector<double> endPoint = {end.x, end.y, 0};
-			std::vector<double> endPoint = {0, 1, 0};
-
-//			std::vector<double> line = {begin.x, begin.y, 0};
-			std::vector<double> line = {0, 0, 0};
-
-			line.push_back(1);
-			line.push_back(0);
-			line.push_back(0);
-			line.push_back(1);
-			line.push_back(1);
-			line.insert(line.end(), color.getColor().begin(), color.getColor().end());
-			line.insert(line.end(), identity.begin(), identity.end());
-
-			line.insert(line.end(), endPoint.begin(), endPoint.end());
-			line.push_back(1);
-			line.push_back(0);
-			line.push_back(0);
-			line.push_back(1);
-			line.push_back(1);
-			line.insert(line.end(), color.getColor().begin(), color.getColor().end());
-			line.insert(line.end(), identity.begin(), identity.end());
-
-//			OpenGLWrapper::getOpenGLWrapper().drawLines(line);
+			OpenGLWrapper::getOpenGLWrapper()
+					.drawLine(begin.x, begin.y, 0, end.x, end.y, 0, OpenGLWrapper::Color::Blue());
 		}
 
 #endif
 	};
 
+	/**
+	 * @return True if the segments are coincident or intersecting.
+	 */
 	bool checkCollision(LineSegment segment1, LineSegment segment2) {
 		PlanarVector intersection;
 
 		LineSegment::IntersectResult intersectResult = segment1.intersect(segment2, intersection);
+
+		// Filter out joint collision for neighbor segments.
+		if (segment1.end == segment2.begin || segment2.end == segment1.begin) {
+			return intersectResult == LineSegment::IntersectResult::COINCIDENT;
+		}
 
 		return intersectResult == LineSegment::IntersectResult::COINCIDENT ||
 			   intersectResult == LineSegment::IntersectResult::INTERESECTING;
@@ -242,8 +244,10 @@ public:
 				currentEnd = links[i].updateLineSegment(currentEnd, absAngle);
 			}
 
-			return true;
-			return hasCollision();
+			bool collision = hasCollision(); //
+			fprintf(stderr, "%s\n", collision ? "collision" : "safe"); //
+
+			return collision;
 		}
 
 		bool checkCollision(Link link1, Link link2) const {
@@ -340,14 +344,20 @@ public:
 
 	PlanarLinkage(const InstanceFileMap &args) : workspaceBounds(3) {
 
-		for (auto workspaceBound : workspaceBounds) {
-			workspaceBound.first = -M_PI;
-			workspaceBound.second = M_PI;
+		for (int i = 0; i < workspaceBounds.size(); ++i) {
+			workspaceBounds[i].first = -M_PI;
+			workspaceBounds[i].second = M_PI;
 		}
 
 		auto stateVarDomains = getStateVarRanges(workspaceBounds);
 		for (auto range : stateVarDomains) {
 			distributions.emplace_back(range.first, range.second);
+		}
+
+		boost::char_separator<char> sep(" ");
+		boost::tokenizer<boost::char_separator<char> > tokens(args.value("Goal Thresholds"), sep);
+		for (auto token : tokens) {
+			goalThresholds.push_back(std::stod(token));
 		}
 	}
 
@@ -361,7 +371,22 @@ public:
 	}
 
 	bool isGoal(const State &state, const State &goal) const {
-		return false; //TODO
+		auto targetStateVars = state.getStateVars();
+		auto goalStateVars = goal.getStateVars();
+		const int numberOfLinks = targetStateVars.size();
+
+		assert(numberOfLinks == goalStateVars.size());
+
+		double difference = 0;
+
+		for (int i = 0; i < numberOfLinks; ++i) {
+			difference = targetStateVars[i] - goalStateVars[i];
+			if (std::abs(difference) > goalThresholds[i]) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	Edge randomSteer(const State &start, double dt) const {
@@ -377,17 +402,19 @@ public:
 			double v = distribution(generator);
 			sum += v;
 			max = std::max(max, v);
-			controls.push_back(v);
-			stateVars.push_back(start.getStateVars()[i] + v);
+			controls[i] = v;
+			stateVars[i] = start.getStateVars()[i] + v;
 		}
 
 		return Edge(start, buildState(stateVars), sum, controls, max);
 	}
 
 	Edge steerWithControl(const State &start, const Edge &getControlsFromThisEdge, double dt) const {
+		assert(false);
 	}
 
 	Edge steerWithControl(const State &start, const std::vector<double> controls, double dt) const {
+		assert(false);
 	}
 
 	State buildState(const StateVars &stateVars) const {
@@ -431,7 +458,8 @@ public:
 
 	}
 
-	bool safePoses(const PlanarLinkage &agent, const std::vector<fcl::Transform3f> &poses, const State &state = State()) const {
+	bool safePoses(const PlanarLinkage &agent, const std::vector<
+			fcl::Transform3f> &poses, const State &state = State()) const {
 
 	}
 

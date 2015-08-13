@@ -1,6 +1,8 @@
 #pragma once
 
 #include "workspaces/planarlinkage.hpp"
+#include <chrono>
+#include <thread>
 
 unsigned int GraphicsIterations = 1000;
 
@@ -28,13 +30,19 @@ void go_TEST(const InstanceFileMap& args, const Agent& agent, const Workspace &w
 	bool firstInvocation = true;
 	auto lambda = [&](){
 		start.draw();
-//		workspace.draw();
-//		agent.draw();
-//		agent.drawMesh(start);
-//		agent.drawMesh(goal);
-//		planner.query(start, goal, GraphicsIterations, firstInvocation);
-//		firstInvocation = false;
+		goal.draw();
+//		auto edge = agent.randomSteer(start, 0); //TEST//
+//		edge.end.draw(); //TEST//
+//		std::chrono::milliseconds timespan(1000); // TEST //
+//		std::this_thread::sleep_for(timespan);//TEST//
+		workspace.draw();
+		agent.draw();
+		agent.drawMesh(start);
+		agent.drawMesh(goal);
+		planner.query(start, goal, GraphicsIterations, firstInvocation);
+		firstInvocation = false;
 	};
+
 	OpenGLWrapper::getOpenGLWrapper().runWithCallback(lambda, args);
 #else
 	planner.query(start, goal);
@@ -288,6 +296,9 @@ void planarLinkage(const InstanceFileMap& args) {
 
 	Agent::State start(startPositionVars);
 	Agent::State goal(goalPositionVars);
+
+	start.print();
+	goal.print();
 
 	go<Workspace, Agent>(args, planarLinkage, planarLinkage, start, goal);
 }
