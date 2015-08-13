@@ -1,0 +1,19 @@
+Seed ? 1
+
+Agent Type ? PlanarLinkage
+Agent Mesh ? ../mesh_models/agent_models/Easy_robot.dae
+Goal Thresholds ? 0.25 0.25 0.25
+
+Environment Mesh ? /Users/bencecserna/Documents/Development/projects/motionplanningtoolkit/motionplanningtoolkit/mesh_models/environment_models/unit_box.dae
+Environment Location ? 0 0 0 1 0 0 0
+Environment Bounding Box ? -5 5 -5 5 -5 5
+
+Steering Delta t ? 0.1
+Collision Check Delta t ? 0.01
+
+Integration Step Size ? 0.01
+
+Agent Start Position ? 1 1 1
+Agent Goal Position ? 3.14 3.14 3.14
+
+Planner ? RRT
