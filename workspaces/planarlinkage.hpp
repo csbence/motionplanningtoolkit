@@ -178,19 +178,55 @@ public:
 	typedef std::vector<std::pair<double, double> > WorkspaceBounds;
 	typedef std::vector<std::pair<double, double> > StateVarRanges;
 
+	class State;
+	typedef State AbstractState;
+
+//	class AbstractState {
+//	public:
+//		AbstractState() { }
+//
+//		AbstractState(const AbstractState &) = default;
+//
+//		AbstractState(AbstractState &&) = default;
+//
+//		AbstractState &operator=(const AbstractState &) = default;
+//
+//		AbstractState &operator=(AbstractState &&) = default;
+//
+//		std::vector<fcl::Transform3f> getTransforms() const {
+//			return std::vector<fcl::Transform3f>();
+//		}
+//
+//		static std::vector<fcl::Transform3f> interpolate(const AbstractState &a, const AbstractState &b, double dt) {
+//			return std::vector<fcl::Transform3f>();
+//		}
+//
+//		static AbstractState getRandomAbstractState(const std::vector<std::pair<double, double> > &bounds) {
+//			return AbstractState();
+//		}
+//
+//		static double evaluateDistance(const AbstractState &a, const AbstractState &b) {
+//			return 0;
+//		}
+//
+//		fcl::Transform3f transform;
+//		std::vector<double> treeStateVars;
+//	};
+
 	class State {
 	public:
-		State() : stateVars(3),
-				  links(3) {
+		State() : stateVars(3) {
 		}
 
-		State(const State &s) : stateVars(s.stateVars.begin(), s.stateVars.end()),
-								links(3) {
-			setAngles(stateVars);
-		}
+		State(const State &) = default;
 
-		State(const StateVars &vars) : stateVars(vars.begin(), vars.end()),
-									   links(3) {
+		State(State &&) = default;
+
+		State &operator=(const State &) = default;
+
+		State &operator=(State &&) = default;
+
+		explicit State(StateVars vars) : stateVars(std::move(vars)) {
 			setAngles(stateVars);
 		}
 
@@ -226,7 +262,6 @@ public:
 				currentEnd = links[i].updateLineSegment(currentEnd, absAngle);
 			}
 
-			return true;
 			return hasCollision();
 		}
 
@@ -279,14 +314,77 @@ public:
 
 #endif
 
+//		fcl::Transform3f getTransform() const {
+//			return fcl::Transform3f();
+//		}
 
-		fcl::Transform3f getTransform() const {
-			return fcl::Transform3f();
+		PlanarLinkage::State toAbstractState() const {
+			return *this;
 		}
 
+		std::vector<State> getTransforms() const {
+			return std::vector<State>{*this};
+		}
+
+		static std::vector<State> interpolate(const State &a, const State &b, const double dt) {
+			const int dim = a.getStateVars().size();
+			std::vector<State> intermediateStates;
+
+			BOOST_ASSERT(dim == b.getStateVars().size());
+			assert(dim > 0);
+
+			// Find largest difference
+			double maxDifference = 0;
+			int maxDifferenceIndex = 0;
+			for (int i = 0; i < dim; ++i) {
+				double difference = std::abs(a.getStateVars()[i] - b.getStateVars()[i]);
+				if (difference > maxDifference) {
+					maxDifference = difference;
+					maxDifferenceIndex = i;
+				}
+			}
+
+			const int numberOfSteps = maxDifference / dt;
+
+			// If there are no intermediate states
+			if (numberOfSteps == 0) {
+				return intermediateStates;
+			}
+
+			// Calculate step sizes
+			std::vector<double> stepSizes(dim);
+			for (int i = 0; i < dim; ++i) {
+				double difference = b.getStateVars()[i] - a.getStateVars()[i];
+				stepSizes[i] = difference / numberOfSteps;
+			}
+
+			// Generate intermediate states;
+			for (int i = 0; i < numberOfSteps; ++i) {
+
+				StateVars intermediateStateVars(dim);
+
+				for (int j = 0; j < dim; ++j) {
+					intermediateStateVars[j] = a.getStateVars()[j] + i * stepSizes[j];
+				}
+
+				intermediateStates.emplace_back(std::move(intermediateStateVars));
+			}
+
+			return intermediateStates;
+		}
+
+		static State getRandomAbstractState(const std::vector<std::pair<double, double> > &bounds) {
+			return State();
+		}
+
+		static double evaluateDistance(const State &a, const State &b) {
+			return 0;
+		}
+
+		StateVars treeStateVars; // TODO warning duplicated variable
 	private:
 		StateVars stateVars;
-		std::vector<Link> links;
+		std::vector<Link> links = std::vector<Link>(3);
 	};
 
 	class Edge {
@@ -410,11 +508,13 @@ public:
 	}
 
 	Edge steerWithControl(const State &start, const Edge &getControlsFromThisEdge, double dt) const {
-		assert(false);
+		std::cerr << "Not implemented fuction: PlanarLinkage::steerWithControl (1)";
+		exit(0);
 	}
 
 	Edge steerWithControl(const State &start, const std::vector<double> controls, double dt) const {
-		assert(false);
+		std::cerr << "Not implemented fuction: PlanarLinkage::steerWithControl (2)";
+		exit(0);
 	}
 
 	State buildState(const StateVars &stateVars) const {
@@ -454,13 +554,13 @@ public:
 
 	}
 
-	bool safePose(const PlanarLinkage &agent, const fcl::Transform3f &pose, const State &state = State()) const {
+//	bool safePose(const PlanarLinkage &agent, const fcl::Transform3f &pose, const State &state = State()) const {
+//
+//	}
 
-	}
-
-	bool safePoses(const PlanarLinkage &agent, const std::vector<
-			fcl::Transform3f> &poses, const State &state = State()) const {
-
+	bool safePoses(const PlanarLinkage &agent, const std::vector<State> &poses, const State &state = State()) const {
+		std::cerr << "Not implemented fuction: PlanarLinkage::safePoses";
+		exit(0);
 	}
 
 	void draw() const {

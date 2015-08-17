@@ -26,11 +26,16 @@ void go_TEST(const InstanceFileMap& args, const Agent& agent, const Workspace &w
 	TreeInterface treeInterface(kdtree, sampler);
 	Planner planner(workspace, agent, treeInterface, args);
 
+	auto intermediateStates = Agent::AbstractState::interpolate(start.toAbstractState(), goal.toAbstractState(), 0.3);
+
 #ifdef WITHGRAPHICS
 	bool firstInvocation = true;
 	auto lambda = [&](){
 		start.draw();
 		goal.draw();
+		for (auto state : intermediateStates) {
+			state.draw();
+		}
 //		auto edge = agent.randomSteer(start, 0); //TEST//
 //		edge.end.draw(); //TEST//
 //		std::chrono::milliseconds timespan(1000); // TEST //
@@ -228,7 +233,7 @@ void blimp(const InstanceFileMap& args) {
 
 	Agent::State goal(goalPosition[0], goalPosition[1], goalPosition[2], theta);
 
-	go<Workspace, Agent>(args, workspace, agent, start, goal);
+//	go<Workspace, Agent>(args, workspace, agent, start, goal);
 }
 
 void snake(const InstanceFileMap& args) {
@@ -255,7 +260,7 @@ void snake(const InstanceFileMap& args) {
 
 	Agent::State goal(goalPosition);
 
-	go<Workspace, Agent>(args, workspace, agent, start, goal);
+//	go<Workspace, Agent>(args, workspace, agent, start, goal);
 }
 
 void geometric(const InstanceFileMap& args) {
@@ -279,7 +284,7 @@ void geometric(const InstanceFileMap& args) {
 
 	Agent::State goal(goalPosition);
 
-	go<Workspace, Agent>(args, workspace, agent, start, goal);
+//	go<Workspace, Agent>(args, workspace, agent, start, goal);
 }
 
 void planarLinkage(const InstanceFileMap& args) {
