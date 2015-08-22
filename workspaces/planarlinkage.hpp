@@ -179,6 +179,7 @@ public:
 	typedef std::vector<std::pair<double, double> > StateVarRanges;
 
 	class State;
+
 	typedef State AbstractState;
 
 //	class AbstractState {
@@ -215,7 +216,8 @@ public:
 
 	class State {
 	public:
-		State() : stateVars(3) {
+		State() : treeStateVars(3) {
+			setAngles(treeStateVars);
 		}
 
 		State(const State &) = default;
@@ -226,15 +228,15 @@ public:
 
 		State &operator=(State &&) = default;
 
-		explicit State(StateVars vars) : stateVars(std::move(vars)) {
-			setAngles(stateVars);
+		explicit State(StateVars vars) : treeStateVars(std::move(vars)) {
+			setAngles(treeStateVars);
 		}
 
-		const StateVars &getStateVars() const { return stateVars; }
+		const StateVars &getStateVars() const { return treeStateVars; }
 
 		bool equals(const State &s) const {
-			for (unsigned int i = 0; i < stateVars.size(); ++i) {
-				if (fabs(stateVars[i] - s.stateVars[i]) > 0.000001) {
+			for (unsigned int i = 0; i < getStateVars().size(); ++i) {
+				if (fabs(getStateVars()[i] - s.getStateVars()[i]) > 0.000001) {
 					return false;
 				}
 			}
@@ -242,13 +244,14 @@ public:
 		}
 
 		void print() const {
+			auto stateVars = getStateVars();
 			for (auto v : stateVars) {
 				fprintf(stderr, "%g ", v);
 			}
 			fprintf(stderr, "\n");
 		}
 
-		bool move(Control control) {
+		void move(Control control) {
 			const int numberOfLinks = links.size();
 			assert(control.size() == numberOfLinks);
 
@@ -261,11 +264,9 @@ public:
 				absAngle += links[i].getAngle();
 				currentEnd = links[i].updateLineSegment(currentEnd, absAngle);
 			}
-
-			return hasCollision();
 		}
 
-		bool setAngles(std::vector<double> angles) {
+		void setAngles(std::vector<double> angles) {
 			const int numberOfLinks = links.size();
 			assert(angles.size() == numberOfLinks);
 
@@ -278,11 +279,6 @@ public:
 				absAngle += links[i].getAngle();
 				currentEnd = links[i].updateLineSegment(currentEnd, absAngle);
 			}
-
-			bool collision = hasCollision(); //
-			fprintf(stderr, "%s\n", collision ? "collision" : "safe"); //
-
-			return collision;
 		}
 
 		bool checkCollision(Link link1, Link link2) const {
@@ -331,7 +327,7 @@ public:
 			std::vector<State> intermediateStates;
 
 			BOOST_ASSERT(dim == b.getStateVars().size());
-			assert(dim > 0);
+			BOOST_ASSERT(dim > 0);
 
 			// Find largest difference
 			double maxDifference = 0;
@@ -381,9 +377,8 @@ public:
 			return 0;
 		}
 
-		StateVars treeStateVars; // TODO warning duplicated variable
+		StateVars treeStateVars;
 	private:
-		StateVars stateVars;
 		std::vector<Link> links = std::vector<Link>(3);
 	};
 
@@ -394,29 +389,22 @@ public:
 							   duration(0) {
 		}
 
-		Edge(const State &start, const State &end, double cost, const std::vector<double> &controls, double duration)
-				: start(start),
-				  end(end),
+		Edge(const State start, const State end, double cost, const std::vector<double> control, double duration)
+				: start(std::move(start)),
+				  end(std::move(end)),
 				  cost(cost),
 				  treeIndex(0),
-				  duration(duration) {
+				  duration(duration),
+				  control(std::move(control)) {
 		}
 
-		Edge(const Edge &e) : start(e.start),
-							  end(e.end),
-							  cost(e.cost),
-							  treeIndex(e.treeIndex),
-							  duration(e.duration) {
-		}
+		Edge(const Edge &) = default;
 
-		Edge &operator=(const Edge &e) {
-			start = e.start;
-			end = e.end;
-			cost = e.cost;
-			duration = e.duration;
-			treeIndex = e.treeIndex;
-			return *this;
-		}
+		Edge(Edge &&) = default;
+
+		Edge &operator=(const Edge &) = default;
+
+		Edge &operator=(Edge &&) = default;
 
 		void print() {
 			start.print();
@@ -433,11 +421,13 @@ public:
 
 		void setPointIndex(int ptInd) { treeIndex = ptInd; }
 
+		Control getControl() const { return control; }
+
 		State start, end;
 		double cost, duration;
 		int treeIndex;
 		Edge *parent;
-
+		Control control;
 	};
 
 	PlanarLinkage(const InstanceFileMap &args) : workspaceBounds(3) {
@@ -489,32 +479,55 @@ public:
 
 	Edge randomSteer(const State &start, double dt) const {
 		const int numberOfLinks = start.getStateVars().size();
-		std::vector<double> controls(numberOfLinks);
-		std::vector<double> stateVars(numberOfLinks);
+		Control controls(numberOfLinks);
+		StateVars stateVars(numberOfLinks);
 
 		double sum = 0;
 		double max = 0;
 
 		for (int i = 0; i < numberOfLinks; ++i) {
 			auto distribution = distributions[i];
-			double v = distribution(generator);
+			double v = distribution(generator) / 20;
+			std::cerr << "  " << start.getStateVars()[i];
+			std::cerr << "-> " << v;
+
+
 			sum += v;
 			max = std::max(max, v);
 			controls[i] = v;
 			stateVars[i] = start.getStateVars()[i] + v;
 		}
 
+//		stateVars[1] = 0;
+//		stateVars[2] = 0;
+
+		std::cerr << " \nSteer ";
+
+
 		return Edge(start, buildState(stateVars), sum, controls, max);
 	}
 
-	Edge steerWithControl(const State &start, const Edge &getControlsFromThisEdge, double dt) const {
-		std::cerr << "Not implemented fuction: PlanarLinkage::steerWithControl (1)";
-		exit(0);
+	Edge steerWithControl(const State &start, const Edge &getControlFromThisEdge, double dt) const {
+		return steerWithControl(start, getControlFromThisEdge.getControl(), dt);
 	}
 
-	Edge steerWithControl(const State &start, const std::vector<double> controls, double dt) const {
-		std::cerr << "Not implemented fuction: PlanarLinkage::steerWithControl (2)";
-		exit(0);
+	Edge steerWithControl(const State &start, const Control controls, double dt) const {
+		const int numberOfLinks = start.getStateVars().size();
+		StateVars stateVars(numberOfLinks);
+
+		BOOST_ASSERT(numberOfLinks == controls.size());
+
+		double sum = 0;
+		double max = 0;
+
+		for (int i = 0; i < numberOfLinks; ++i) {
+			double v = controls[i];
+			sum += v;
+			max = std::max(max, v);
+			stateVars[i] = start.getStateVars()[i] + v;
+		}
+
+		return Edge(start, buildState(stateVars), sum, controls, max);
 	}
 
 	State buildState(const StateVars &stateVars) const {
@@ -541,7 +554,7 @@ public:
 		return workspaceBounds;
 	}
 
-	Control controlFromVector(const std::vector<double> &controls) const {
+	Control controlFromVector(const Control &controls) const {
 		return controls;
 	}
 
@@ -551,16 +564,26 @@ public:
 	}
 
 	bool safeEdge(const PlanarLinkage &agent, const Edge &edge, double dt, bool checkSelfCollision = false) const {
+		auto intermediateStates = PlanarLinkage::State::interpolate(edge.start, edge.end, dt);
+		intermediateStates.push_back(edge.end);
+		intermediateStates.push_back(edge.start);
 
+		return safeStates(intermediateStates);
 	}
 
 //	bool safePose(const PlanarLinkage &agent, const fcl::Transform3f &pose, const State &state = State()) const {
 //
 //	}
 
-	bool safePoses(const PlanarLinkage &agent, const std::vector<State> &poses, const State &state = State()) const {
-		std::cerr << "Not implemented fuction: PlanarLinkage::safePoses";
-		exit(0);
+	bool safePoses(const PlanarLinkage &agent, const std::vector<State> &states, const State &state = State()) const {
+		return safeStates(states);
+	}
+
+	bool safeStates(const std::vector<State> &states) const {
+		for (auto state : states) {
+			if (state.hasCollision()) return false;
+		}
+		return true;
 	}
 
 	void draw() const {
