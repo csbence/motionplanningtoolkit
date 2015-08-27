@@ -4,15 +4,15 @@
 #include <chrono>
 #include <thread>
 
-unsigned int GraphicsIterations = 1000;
+unsigned int GraphicsIterations = 1;
 
 template<class Workspace, class Agent>
 void go_TEST(const InstanceFileMap& args, const Agent& agent, const Workspace &workspace,
 			const typename Agent::State &start, const typename Agent::State &goal) {
 
 	dfpair(stdout, "planner", "%s", "TEST");
-	// typedef flann::KDTreeSingleIndexParams KDTreeType;
-	typedef flann::KDTreeIndexParams KDTreeType;
+	 typedef flann::KDTreeSingleIndexParams KDTreeType;
+//	typedef flann::KDTreeIndexParams KDTreeType;
 	typedef FLANN_KDTreeWrapper<KDTreeType, flann::L2<double>, typename Agent::Edge> KDTree;
 	typedef UniformSampler<Workspace, Agent, KDTree> Sampler;
 	typedef TreeInterface<Agent, KDTree, Sampler> TreeInterface;
@@ -33,18 +33,18 @@ void go_TEST(const InstanceFileMap& args, const Agent& agent, const Workspace &w
 	auto lambda = [&](){
 		start.draw();
 		goal.draw();
-		for (auto state : intermediateStates) {
-			state.draw();
-		}
-//		auto edge = agent.randomSteer(start, 0); //TEST//
-//		edge.end.draw(); //TEST//
-//		std::chrono::milliseconds timespan(1000); // TEST //
-//		std::this_thread::sleep_for(timespan);//TEST//
+//		for (auto state : intermediateStates) {
+//			state.draw();
+//		}
+		auto edge = agent.randomSteer(start, 0); //TEST//
+		edge.end.draw(); //TEST//
+		std::chrono::milliseconds timespan(500); // TEST //
+		std::this_thread::sleep_for(timespan);//TEST//
 		workspace.draw();
 		agent.draw();
 		agent.drawMesh(start);
 		agent.drawMesh(goal);
-		planner.query(start, goal, GraphicsIterations, firstInvocation);
+//		planner.query(start, goal, GraphicsIterations, firstInvocation);
 		firstInvocation = false;
 	};
 
@@ -160,7 +160,7 @@ void go_PPRM(const InstanceFileMap& args, const Agent& agent, const Workspace &w
 
 	PlakuTreeInterfaceT plakuTreeInterface(workspace, agent, prmLite, start, goal, alpha, b, stateRadius);
 
-	// Plaku planner(workspace, agent, plakuTreeInterface, args);
+	 Plaku planner(workspace, agent, plakuTreeInterface, args);
 	#ifdef WITHGRAPHICS
 		bool firstInvocation = true;
 		auto lambda = [&](){
@@ -169,15 +169,15 @@ void go_PPRM(const InstanceFileMap& args, const Agent& agent, const Workspace &w
 			agent.drawMesh(start);
 			agent.drawMesh(goal);
 
-	// 		// plakuTreeInterface.draw();
+	 		 plakuTreeInterface.draw();
 
-	// 		planner.query(start, goal, GraphicsIterations, firstInvocation);
-	// 		firstInvocation = false;
+	 		planner.query(start, goal, GraphicsIterations, firstInvocation);
+	 		firstInvocation = false;
 		};
 		OpenGLWrapper::getOpenGLWrapper().runWithCallback(lambda, args);
-	// #else
-	// 	planner.query(start, goal);
-	// 	planner.dfpairs();
+	 #else
+	 	planner.query(start, goal);
+	 	planner.dfpairs();
 	#endif
 }
 

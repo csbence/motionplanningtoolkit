@@ -182,38 +182,6 @@ public:
 
 	typedef State AbstractState;
 
-//	class AbstractState {
-//	public:
-//		AbstractState() { }
-//
-//		AbstractState(const AbstractState &) = default;
-//
-//		AbstractState(AbstractState &&) = default;
-//
-//		AbstractState &operator=(const AbstractState &) = default;
-//
-//		AbstractState &operator=(AbstractState &&) = default;
-//
-//		std::vector<fcl::Transform3f> getTransforms() const {
-//			return std::vector<fcl::Transform3f>();
-//		}
-//
-//		static std::vector<fcl::Transform3f> interpolate(const AbstractState &a, const AbstractState &b, double dt) {
-//			return std::vector<fcl::Transform3f>();
-//		}
-//
-//		static AbstractState getRandomAbstractState(const std::vector<std::pair<double, double> > &bounds) {
-//			return AbstractState();
-//		}
-//
-//		static double evaluateDistance(const AbstractState &a, const AbstractState &b) {
-//			return 0;
-//		}
-//
-//		fcl::Transform3f transform;
-//		std::vector<double> treeStateVars;
-//	};
-
 	class State {
 	public:
 		State() : treeStateVars(3) {
@@ -309,10 +277,6 @@ public:
 		}
 
 #endif
-
-//		fcl::Transform3f getTransform() const {
-//			return fcl::Transform3f();
-//		}
 
 		PlanarLinkage::State toAbstractState() const {
 			return *this;
@@ -570,10 +534,6 @@ public:
 
 		return safeStates(intermediateStates);
 	}
-
-//	bool safePose(const PlanarLinkage &agent, const fcl::Transform3f &pose, const State &state = State()) const {
-//
-//	}
 
 	bool safePoses(const PlanarLinkage &agent, const std::vector<State> &states, const State &state = State()) const {
 		return safeStates(states);

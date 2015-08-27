@@ -323,19 +323,19 @@ protected:
 		if(drawLines) {
 			OpenGLWrapper::Color color;
 
-			// for(const auto& edgeSet : edges) {
-			// 	std::vector<double> edgeForVrep(6);
-			// 	const auto startVertex = vertices[edgeSet.first];
-
-			// 	const auto& trans = startVertex->transform.getTranslation();
-
-			// 	for(const auto& edge : edgeSet.second) {
-			// 		const auto endVertex = vertices[edge.second.endpoint];
-			// 		const auto& trans2 = endVertex->transform.getTranslation();
-
-			// 		OpenGLWrapper::getOpenGLWrapper().drawLine(trans[0], trans[1], trans[2], trans2[0], trans2[1], trans2[2], color);
-			// 	}
-			// }
+//			 for(const auto& edgeSet : edges) {
+//			 	std::vector<double> edgeForVrep(6);
+//			 	const auto startVertex = vertices[edgeSet.first];
+//
+//			 	const auto& trans = startVertex->transform.getTranslation();
+//
+//			 	for(const auto& edge : edgeSet.second) {
+//			 		const auto endVertex = vertices[edge.second.endpoint];
+//			 		const auto& trans2 = endVertex->transform.getTranslation();
+//
+//			 		OpenGLWrapper::getOpenGLWrapper().drawLine(trans[0], trans[1], trans[2], trans2[0], trans2[1], trans2[2], color);
+//			 	}
+//			 }
 		}
 	}
 
