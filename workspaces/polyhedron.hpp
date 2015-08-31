@@ -2,9 +2,16 @@
 
 #include <vector>
 #include <math.h>
+#include <math/vector.h>
+#include <math/matrix.h>
 #include <random>
 
-namespace Planar {
+namespace Polyhedron {
+
+class PointAgent {
+
+};
+
 class PlanarVector {
 public:
 	PlanarVector(double f = 0.0f) : x(f),
@@ -122,56 +129,7 @@ bool checkCollision(LineSegment segment1, LineSegment segment2) {
 }
 }
 
-class Link {
-public:
-	Link()
-		: segment(),
-		  angle(0) {
-	}
-
-	Planar::PlanarVector updateLineSegment(const Planar::PlanarVector startPoint, const double absAngle) {
-
-		Planar::PlanarVector endPoint;
-
-		endPoint.x = startPoint.x - std::cos(absAngle);
-		endPoint.y = startPoint.y + std::sin(absAngle);
-
-		segment.begin = startPoint;
-		segment.end = endPoint;
-
-		return endPoint;
-	}
-
-	double getAngle() const {
-		return angle;
-	}
-
-	void setAngle(const double angle) {
-		this->angle = angle;
-	}
-
-	void addAngle(const double angle) {
-		this->angle += angle;
-	}
-
-	Planar::LineSegment getSegment() {
-		return segment;
-	}
-
-#ifdef WITHGRAPHICS
-
-	void draw(const OpenGLWrapper::Color &color = OpenGLWrapper::Color()) const {
-		segment.draw(color);
-	}
-
-#endif
-
-private:
-	double angle;
-	Planar::LineSegment segment;
-};
-
-class PlanarLinkage {
+class Polyhedron {
 public:
 	typedef std::vector<double> StateVars;
 	typedef std::vector<double> Control;
@@ -282,6 +240,10 @@ public:
 		}
 
 #endif
+
+		AbstractState toAbstractState() const {
+			return *this;
+		}
 
 		std::vector<State> getTransforms() const {
 			return std::vector<State> {*this};
@@ -415,9 +377,9 @@ public:
 		Control control;
 	};
 
-	PlanarLinkage(const InstanceFileMap &args) : workspaceBounds(3) {
+	Polyhedron(const InstanceFileMap &args) : workspaceBounds(3) {
 
-
+		// TODO Get bound from cfg
 		for(int i = 0; i < workspaceBounds.size(); ++i) {
 			workspaceBounds[i].first = -M_PI;
 			workspaceBounds[i].second = M_PI;
@@ -434,6 +396,28 @@ public:
 		for(auto token : tokens) {
 			goalThresholds.push_back(std::stod(token));
 		}
+	}
+
+	Polyhedron::Polyhedron() {
+	}
+
+	Polyhedron::Polyhedron(const Math::Matrix& M, const Math::Vector& V) {
+		initialize(M,V);
+	}
+
+	Polyhedron::~Polyhedron() {
+	}
+
+	void Polyhedron::initialize(const Math::Matrix& M, const Math::Vector& V) {
+		A.copy(M);
+		b.copy(V);
+	}
+
+	Polyhedron::Polyhedron(int _m, int _n, double* _A, double* _b) {
+		A.resize(_m,_n);
+		A.copy(_A);
+		b.resize(_m);
+		b.copy(_b);
 	}
 
 	unsigned int getTreeStateSize() const {
@@ -610,7 +594,28 @@ public:
 	void draw() const {
 	}
 
+	void initialize(const Math::Matrix& M, const Math::Vector& V);
+
+	/** check if a point is within the polyhedron */
+	bool Polyhedron::contains(const Math::Vector& x) {
+		Math::Vector tmp;
+		A.mul(x,tmp);
+		assert(b.size() == tmp.size());
+		for(int i= 0; i < b.size(); i++) {
+			if(tmp(i) < b(i))
+				return false;
+		}
+		return true;
+	}
+	/** check if this polyhedron is empty (both A and b are empty) */
+	bool isEmpty() {
+		return A.isEmpty() || b.empty();
+	}
+
 private:
+	Math::Matrix A;
+	Math::Vector b;
+
 	std::vector<double> goalThresholds;
 	WorkspaceBounds workspaceBounds;
 

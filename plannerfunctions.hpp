@@ -1,6 +1,7 @@
 #pragma once
 
 #include "workspaces/planarlinkage.hpp"
+
 #include <chrono>
 #include <thread>
 
@@ -26,7 +27,7 @@ void go_TEST(const InstanceFileMap& args, const Agent& agent, const Workspace &w
 	TreeInterface treeInterface(kdtree, sampler);
 	Planner planner(workspace, agent, treeInterface, args);
 
-	auto intermediateStates = Agent::AbstractState::interpolate(start.toAbstractState(), goal.toAbstractState(), 0.3);
+	auto intermediateStates = Agent::AbstractState::interpolate(start, goal.toAbstractState(), 0.3);
 
 #ifdef WITHGRAPHICS
 	bool firstInvocation = true;

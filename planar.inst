@@ -2,7 +2,10 @@ Agent Type ? PlanarLinkage
 Agent Start Position ? 0 1.55 1
 Agent Goal Position ? 3.14 0.0 0.1
 Goal Thresholds ? 0.1 0.1 0.1
-Planner ? TEST
+Planner ? RRT
 
 Steering Delta t ? 0.1
 Collision Check Delta t ? 0.1
+
+Seed ? 1
+Zoom ? 30
